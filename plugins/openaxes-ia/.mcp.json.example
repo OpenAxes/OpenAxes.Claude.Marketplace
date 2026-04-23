@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "openaxes-ia": {
+      "type": "http",
+      "url": "https://ia-qa.openaxes.com/mcp",
+      "headers": {
+        "x-mcp-token": "<paste-your-mcp-token-here>"
+      }
+    }
+  }
+}

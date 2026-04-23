@@ -1,0 +1,25 @@
+{
+  "$comment": "This file belongs in the DISTRIBUTION REPO (openaxes-claude-marketplace), NOT in this source repo. It's kept here as an example for reference. scripts/publish-claude-plugin.ps1 maintains the entry for 'openaxes-ia' inside the distribution repo's .claude-plugin/marketplace.json.",
+  "name": "openaxes-plugins",
+  "owner": {
+    "name": "OpenAxes",
+    "email": "manuel@openaxes.com"
+  },
+  "metadata": {
+    "description": "Official OpenAxes Claude plugins — Investigation Assistant integration and related tooling from across the OpenAxes product suite.",
+    "version": "2026.04.1"
+  },
+  "plugins": [
+    {
+      "name": "openaxes-ia",
+      "source": "./plugins/openaxes-ia",
+      "description": "OpenAxes Investigation Assistant — manage investigations, legal holds, document search/review, and reports via MCP.",
+      "version": "0.1.0",
+      "author": {
+        "name": "OpenAxes"
+      },
+      "category": "legal-tech",
+      "tags": ["ediscovery", "legal-hold", "investigation", "mcp"]
+    }
+  ]
+}
