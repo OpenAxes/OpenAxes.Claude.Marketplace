@@ -6,7 +6,10 @@ Integrates Claude with OpenAxes Investigation Assistant via MCP, enabling invest
 
 ### MCP Server
 
-Connects to the OpenAxes IA MCP endpoint over HTTP with token authentication.
+Connects to the OpenAxes IA MCP endpoint at `https://ia-qa.openaxes.com/mcp` over HTTPS.
+Authentication uses OAuth 2.1 with PKCE — the first time Claude invokes a tool, your
+browser opens to the OpenAxes IA consent page. Approve it once; Claude caches the
+bearer token and uses it for all subsequent calls.
 
 ### Skills
 
@@ -17,11 +20,28 @@ Connects to the OpenAxes IA MCP endpoint over HTTP with token authentication.
 
 ## Setup
 
-The MCP token is configured in `.mcp.json`. To rotate the token:
+Install the plugin via the OpenAxes Claude marketplace:
 
-1. Generate a new MCP token from your IA profile at `/user/profile/mcp-tokens`
-2. Update the `x-mcp-token` header value in `.mcp.json`
-3. Revoke the old token
+```
+/plugin marketplace add OpenAxes/OpenAxes.Claude.Marketplace
+/plugin install openaxes-ia@openaxes-plugins
+```
+
+No token configuration is required — Claude handles the OAuth flow automatically
+when you first invoke a tool.
+
+### Revoking access
+
+To disconnect Claude from OpenAxes IA, revoke the MCP session token from your
+OpenAxes IA profile at `/user/profile/mcp-tokens`. Claude will re-prompt for
+authorization on the next tool call.
+
+### Manual / air-gapped installs (advanced)
+
+For environments where OAuth is not practical, a static token header can be
+configured instead. Generate a token at `/user/profile/mcp-tokens` and set up
+an `.mcp.json` with an `x-mcp-token` header. This is not the recommended path
+for marketplace-installed plugins.
 
 ## Usage
 
