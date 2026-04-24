@@ -6,7 +6,7 @@ Integrates Claude with OpenAxes Investigation Assistant via MCP, enabling invest
 
 ### MCP Server
 
-Connects to the OpenAxes IA MCP endpoint at `https://ia-qa.openaxes.com/mcp` over HTTPS.
+Connects to the OpenAxes IA MCP endpoint at `https://ia.openaxes.com/mcp` over HTTPS.
 Authentication uses OAuth 2.1 with PKCE — the first time Claude invokes a tool, your
 browser opens to the OpenAxes IA consent page. Approve it once; Claude caches the
 bearer token and uses it for all subsequent calls.
