@@ -1,5 +1,7 @@
 # Reports — Tool Parameter Reference
 
+> **Statuses:** In addition to `success`, `validation_failure`, `not_found`, and `authorization_failure`, tools in this skill may return `resolution_ambiguous` (name matched multiple entities — `candidates` array supplied), `resolution_not_found` (no match — `suggestions` array supplied), and `approval_required`.
+
 ## list_reports
 
 No arguments.

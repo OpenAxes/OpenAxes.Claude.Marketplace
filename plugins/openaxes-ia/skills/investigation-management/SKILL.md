@@ -6,7 +6,7 @@ description: >
   "reopen an investigation", "get investigation details", "check investigation status",
   or any task involving viewing, creating, or managing the lifecycle of OpenAxes IA investigations.
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # Investigation Management — OpenAxes IA
@@ -17,15 +17,15 @@ Manage the full lifecycle of investigations in OpenAxes IA through the MCP tools
 
 ## Conventions
 
-All investigation identifiers are **hashed IDs** (opaque strings), not integer primary keys. Always use the hashed ID values returned by the server. If a hashed ID cannot be decoded, the server returns a `validation_failure`.
+Entity references in this skill accept **either a friendly identifier (name, email, or abbreviation) or a hashed ID**. The server resolves the value, scoped to the caller's tenant. Resolution is case-insensitive exact match.
 
-Every tool response follows a standard contract with `structuredContent.status` indicating outcome. Check for these statuses:
+When a name matches multiple entities, the tool returns `resolution_ambiguous` with a `candidates` array — present the choices to the user and re-call with one of the returned hashed IDs.
 
-- `success` — completed normally
-- `validation_failure` — bad input; check `validationErrors` for field-level details
-- `not_found` — entity not accessible or does not exist
-- `authorization_failure` — caller lacks permission
-- `domain_failure` — business rule prevented the operation
+When a name matches no entity, the tool returns `resolution_not_found` with a `suggestions` array of close matches.
+
+Mutating tools that require approval return `approval_required`. If `approver` and/or `comments` are missing, the response includes `missingFields` indicating what to ask the user for, plus `candidateApprovers` listing users who can approve.
+
+Statuses to handle: `success`, `validation_failure`, `not_found`, `authorization_failure`, `domain_failure`, `resolution_ambiguous`, `resolution_not_found`, `approval_required`.
 
 ## Workflow guidance
 
@@ -37,23 +37,23 @@ When the user asks vague questions like "show my investigations," start with act
 
 ### Getting investigation details
 
-Use `get_investigation` with a hashed `investigationId`. Returns full detail including workspaces, reviewers, counts (custodians, endpoints, searches, exports), and flags (legal hold, indexable/analyzable endpoints).
+Use `get_investigation` with an `investigation` parameter (name or hashed ID). Returns full detail including workspaces, reviewers, counts (custodians, endpoints, searches, exports), and flags (legal hold, indexable/analyzable endpoints).
 
 ### Creating investigations
 
 Always start by calling `get_investigation_templates` to show the user available templates. Then call `create_investigation` with:
 
-- `templateId` (required, hashed) — from the templates list
+- `template` (required) — template name (case-insensitive exact match) or hashed ID from `get_investigation_templates`
 - `name` (required)
 - `fileDate` (required, ISO-8601)
 - `description` (optional)
-- `workspaceId` (optional, hashed)
+- `workspace` (optional) — workspace name, abbreviation, or hashed ID
 
 Confirm the template choice and investigation name with the user before creating.
 
 ### Closing and reopening
 
-Use `close_investigation` or `reopen_investigation` with a hashed `investigationId`. Reopening optionally accepts `resendNotification` (default false) to re-send legal hold notifications.
+Use `close_investigation` with an `investigation` parameter (name or hashed ID). Use `reopen_investigation` with an `investigation` parameter (name or hashed ID). Reopening optionally accepts `resendNotification` (default false) to re-send legal hold notifications.
 
 Always confirm closure/reopen with the user — these are significant state changes.
 

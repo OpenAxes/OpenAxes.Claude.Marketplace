@@ -16,7 +16,7 @@ Returns: `total`, `page`, `pageSize`, `investigations[]` where each investigatio
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `investigationId` | string | Yes | Hashed investigation ID |
+| `investigation` | string | Yes | Investigation name (case-insensitive exact match) or hashed ID returned by list_investigations |
 
 Returns: `id`, `name`, `description`, `status`, `investigationType`, `fileDate`, `createdDate`, `createdBy`, `workspaces[]`, `reviewers[]`, `counts` (custodianCount, endpointCount, reviewerCount, workspaceCount, searchCount, exportCount, customFieldCount), `flags` (isLegalHold, hasIndexableEndpoints, hasAnalyzableEndpoints, isLinkedToPrr).
 
@@ -30,11 +30,11 @@ Returns: `templates[]` each with `id`, `name`, `description`.
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `templateId` | string | Yes | Hashed template investigation ID |
+| `template` | string | Yes | Template name (case-insensitive exact match) or hashed ID returned by `get_investigation_templates` |
 | `name` | string | Yes | Investigation name |
 | `description` | string | No | Investigation description |
 | `fileDate` | string | Yes | ISO-8601 date/time |
-| `workspaceId` | string | No | Optional hashed workspace ID |
+| `workspace` | string | No | Workspace name, abbreviation, or hashed ID |
 
 Returns: `id` (hashed), `success`, `approvalRequired`.
 
@@ -42,7 +42,7 @@ Returns: `id` (hashed), `success`, `approvalRequired`.
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `investigationId` | string | Yes | Hashed investigation ID |
+| `investigation` | string | Yes | Investigation name (case-insensitive exact match) or hashed ID returned by list_investigations |
 
 Returns: `investigationId`, `status` ("Closed").
 
@@ -50,7 +50,7 @@ Returns: `investigationId`, `status` ("Closed").
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `investigationId` | string | Yes | Hashed investigation ID |
+| `investigation` | string | Yes | Investigation name (case-insensitive exact match) or hashed ID returned by list_investigations |
 | `resendNotification` | boolean | No | Default `false` |
 
 Returns: `investigationId`, `status`, `resendNotification`.
