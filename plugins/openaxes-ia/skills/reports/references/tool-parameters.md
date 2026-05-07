@@ -1,7 +1,5 @@
 # Reports — Tool Parameter Reference
 
-> **Statuses:** In addition to `success`, `validation_failure`, `not_found`, and `authorization_failure`, tools in this skill may return `resolution_ambiguous` (name matched multiple entities — `candidates` array supplied), `resolution_not_found` (no match — `suggestions` array supplied), and `approval_required`.
-
 ## list_reports
 
 No arguments.
@@ -17,7 +15,7 @@ Each filter: `name`, `displayName`, `type`, `entity`, `required`, `multiple`, `d
 |---|---|---|---|
 | `reportId` | string | Yes | Friendly report ID |
 | `format` | string | Yes | `json` or `csv` |
-| `sectionId` | string | No | Hashed section ID from `list_reports`; legacy integer IDs are still accepted for compatibility. Required for CSV when report has multiple sections |
+| `sectionId` | string/integer | No | Hashed section ID from `list_reports`; legacy integer IDs are still accepted for compatibility. Required for CSV when report has multiple sections |
 | `timezoneOffset` | integer | No | Added to filter bag |
 | `page` | integer | No | Must be > 0 when supplied |
 | `pageSize` | integer | No | Must be > 0 when supplied |

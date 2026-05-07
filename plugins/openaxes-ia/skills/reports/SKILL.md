@@ -5,7 +5,7 @@ description: >
   "generate a report", "schedule a report", "export report data", "get report data",
   or any task involving listing, executing, or scheduling reports in OpenAxes IA.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # Reports — OpenAxes IA
@@ -15,17 +15,9 @@ List, execute, and schedule reports through the MCP tools:
 
 ## Conventions
 
-Entity references in this skill accept **either a friendly identifier (name, email, or abbreviation) or a hashed ID**. The server resolves the value, scoped to the caller's tenant. Resolution is case-insensitive exact match.
+Report identifiers use **friendly IDs** (derived from report name), NOT hashed integer IDs. This is different from most other IA entities.
 
-When a name matches multiple entities, the tool returns `resolution_ambiguous` with a `candidates` array — present the choices to the user and re-call with one of the returned hashed IDs.
-
-When a name matches no entity, the tool returns `resolution_not_found` with a `suggestions` array of close matches.
-
-Mutating tools that require approval return `approval_required`. If `approver` and/or `comments` are missing, the response includes `missingFields` indicating what to ask the user for, plus `candidateApprovers` listing users who can approve.
-
-Statuses to handle: `success`, `validation_failure`, `not_found`, `authorization_failure`, `domain_failure`, `resolution_ambiguous`, `resolution_not_found`, `approval_required`.
-
-> **Note:** Report identifiers use **friendly IDs** (derived from report name), NOT hashed integer IDs. This is different from most other IA entities.
+Every report tool response uses the shared MCP result envelope. Check `structuredContent.status` for `success`, `validation_failure`, `not_found`, `authorization_failure`, `domain_failure`, or `internal_error`. Report tools do not currently use conversational resolver statuses or approval statuses.
 
 ## Workflow guidance
 

@@ -6,25 +6,17 @@ description: >
   "review documents", "search investigation", or any task involving
   querying or tagging documents within an OpenAxes IA investigation.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # Search and Review — OpenAxes IA
 
-Search investigation documents and apply review tags through the MCP tools:
+Search investigation documents and apply review tags through the MCP tool:
 `run_search`.
 
 ## Conventions
 
-Entity references in this skill accept **either a friendly identifier (name, email, or abbreviation) or a hashed ID**. The server resolves the value, scoped to the caller's tenant. Resolution is case-insensitive exact match.
-
-When a name matches multiple entities, the tool returns `resolution_ambiguous` with a `candidates` array — present the choices to the user and re-call with one of the returned hashed IDs.
-
-When a name matches no entity, the tool returns `resolution_not_found` with a `suggestions` array of close matches.
-
-Mutating tools that require approval return `approval_required`. If `approver` and/or `comments` are missing, the response includes `missingFields` indicating what to ask the user for, plus `candidateApprovers` listing users who can approve.
-
-Statuses to handle: `success`, `validation_failure`, `not_found`, `authorization_failure`, `domain_failure`, `resolution_ambiguous`, `resolution_not_found`, `approval_required`.
+`run_search` accepts conversational investigation, saved-search, and `applyTags` tag tokens by exact name or hashed ID. If a friendly name is ambiguous, the tool returns `resolution_ambiguous`; if it cannot be resolved, it returns `resolution_not_found` with suggestions when available. Search results return a special `itemId` formatted as `<hashed-document-investigation-id>.<hashed-document-id>` for document-reference display and downstream non-MCP review workflows.
 
 ## Workflow guidance
 
@@ -32,26 +24,31 @@ Statuses to handle: `success`, `validation_failure`, `not_found`, `authorization
 
 Use `run_search` with an `investigation` name or hashed ID. Key parameters:
 
-- `investigation` — investigation name (case-insensitive exact match) or hashed ID (required)
 - `criteria` — search expression (omit for all documents)
-- `search` — saved-search name (case-insensitive) or hashed ID; defaults to first search
+- `search` — saved-search name or hashed ID (defaults to first search or `0`)
 - `start` — offset for pagination (default 0)
 - `limit` — results per page (default 25, max 100)
 - `sortBy` — one of: `from`, `subject`, `recipients`, `hasattachment`, `maildate`, `documentdate`, `relevance`
 - `ascending` — sort direction (default false)
-- `applyTags` — optional array of tag names or hashed IDs; when supplied, tags ALL matching documents and includes `taggedCount` in the response
+- `applyTags` — optional array of tag names or hashed IDs to apply to **all matching documents**, not just the returned page; requires document-tag permission and returns `taggedCount`
 
 Each result item includes: `itemId`, `name`, `documentDate`, `owner`, `ownerEmail`, `mediaType`, `extension`, `sizeMB`, `relevance`, `hasAttachments`, `recipients`, `previewable`.
 
 When the user asks to search, clarify the investigation context first. If they want to browse broadly, omit `criteria`. Present results in a readable summary (name, owner, date, type) and offer to paginate or refine.
 
-### Tagging search results
+### Tagging documents
 
-Tagging is now part of `run_search`. Pass `applyTags: ["Hot", "Privileged"]` to apply those tags to every document the search matches. Tag names follow standard resolution: investigation-scoped tags win over global tags of the same name; ambiguous names within the same scope return `resolution_ambiguous`.
+Use `run_search.applyTags`: include `applyTags` with tag names or hashed IDs when running `run_search`. Tags are resolved before search executes; investigation-scoped tags win over tenant/global tags with the same name. This applies each tag to all matching documents and returns `taggedCount` (including `0` when there are no matches).
 
-Response includes `taggedCount` = total documents tagged across all listed tags. When the search returns zero documents, `taggedCount` is `0` and the call still succeeds.
+When tagging, warn the user that `applyTags` applies to ALL documents matching the search criteria, not just the returned page, and confirm before executing. Returns `taggedCount` so the user knows how many documents were affected.
 
-When tagging via `applyTags`, warn the user that this applies to ALL matching documents (not just the current page) and confirm before executing.
+### Typical search-then-tag workflow
+
+1. Run `run_search` to identify the candidate result set.
+2. Present a summary of the returned page and the total matching count.
+3. If the user wants tags applied, refine the search criteria or saved search until the intended set is exactly the set of all matching documents.
+4. Warn and confirm that `applyTags` tags every matching document, not individual result choices and not only the returned page.
+5. Rerun `run_search` with `applyTags` only after that confirmation.
 
 ## Reference
 

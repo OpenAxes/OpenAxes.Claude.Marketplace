@@ -6,15 +6,15 @@ Integrates Claude with OpenAxes Investigation Assistant via MCP, enabling invest
 
 ### MCP Server
 
-Connects to the OpenAxes IA MCP endpoint at `https://ia.openaxes.com/mcp` over HTTPS.
+Connects to the OpenAxes IA MCP endpoint at `https://ia-qa.openaxes.com/mcp` over HTTPS.
 Authentication uses OAuth 2.1 with PKCE — the first time Claude invokes a tool, your
 browser opens to the OpenAxes IA consent page. Approve it once; Claude caches the
 bearer token and uses it for all subsequent calls.
 
 ### Skills
 
-- **Investigation Management** — List, view, create, close, and reopen investigations
-- **Legal Hold** — Manage custodians, send hold notifications, apply and release endpoint holds
+- **Investigation Management** — List, view, create, close, reopen, configure governed prefilter settings, and start selected-target deep analysis
+- **Legal Hold** — Manage custodians, send hold notifications, apply/release endpoint holds, and use MCDT custodian datasource preservation scaffolds
 - **Search and Review** — Search investigation documents and apply review tags
 - **Reports** — List, execute, and schedule reports; combine with Cowork document skills to create formatted deliverables
 
@@ -51,5 +51,7 @@ Ask Claude things like:
 - "Create a new investigation from the standard template"
 - "List custodians on investigation X"
 - "Search for documents mentioning 'contract renewal' in investigation X"
+- "Configure the Purview prefilter for investigation X"
+- "Start deep analysis for Alice's mailbox in investigation X"
 - "Run the investigation summary report and create a Word doc from it"
 - "Schedule the compliance report to run every Monday at 9 AM"
