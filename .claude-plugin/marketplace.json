@@ -17,10 +17,10 @@
       }
     },
     {
-      "name": "docassist",
-      "source": "./plugins/docassist",
-      "description": "docassist integration — on-prem documentation Q&A over locally indexed docs via MCP. Requires a local docassist installation (default http://localhost:8000).",
-      "version": "0.0.0",
+      "name": "OAassist",
+      "source": "./plugins/OAassist",
+      "description": "OAassist — documentation Q&A over the OpenAxes knowledge base (Radar, PuRe, IA) via MCP.",
+      "version": "1.0.0",
       "author": {
         "name": "OpenAxes"
       }
