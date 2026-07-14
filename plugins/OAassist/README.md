@@ -60,9 +60,11 @@ Files in `radar/` get tagged `app="radar"`, etc. — see [Multi-app documentatio
 
 ### 4. Restart and reindex
 
+The default `OAassist.env` ships `AUTH_ENABLED=true`, so `/v1/*` calls need a bearer service token — mint one with `"C:\Program Files\OAassist\OAassist.exe" manage issue-token <label>` (see [Security](#security)).
+
 ```cmd
 "C:\Program Files\OAassist\nssm.exe" restart OAassist
-curl -X POST http://localhost:8000/v1/reindex -H "Content-Type: application/json" -d "{}"
+curl -X POST http://localhost:8000/v1/reindex -H "Content-Type: application/json" -H "Authorization: Bearer <token>" -d "{}"
 ```
 
 ### 5. Verify
@@ -117,7 +119,7 @@ cp .env.example .env
 
 Edit `.env`. The indispensable variable is **`DATA_PATH`** — absolute path to your documentation root. Without it the service starts but `/v1/reindex` returns 500 and there is nothing to answer about.
 
-If you want synthesized answers instead of raw chunks, also set `LLM_PROVIDER=anthropic` (+ `ANTHROPIC_API_KEY`) for Claude, or `LLM_PROVIDER=ollama` for a local Ollama daemon (default model `phi4-mini`). See [Configuration](#configuration) for the full list.
+If you want synthesized answers instead of raw chunks, also set `LLM_PROVIDER=anthropic` (+ `ANTHROPIC_API_KEY`) for Claude, or `LLM_PROVIDER=ollama` for a local Ollama daemon (default model `qwen3:4b`). See [Configuration](#configuration) for the full list.
 
 ### 4. Index your documents
 
@@ -207,6 +209,8 @@ curl -X POST http://localhost:8000/v1/reindex -H "Content-Type: application/json
 curl -X POST http://localhost:8000/v1/reindex -H "Content-Type: application/json" -d '{"app":"radar"}'
 ```
 
+MSI installs ship `AUTH_ENABLED=true`: add `-H "Authorization: Bearer <token>"` to the `/v1/*` calls (`/healthz` is unauthenticated). Token minting: [Security](#security).
+
 ### MCP registration (Claude Code)
 
 ```bash
@@ -241,31 +245,41 @@ To test, ask Claude: *"Use ask_documentation to find [something you know is in y
 
 OAassist is also packaged as a Claude plugin, distributed through the OpenAxes plugin marketplace (`OpenAxes/OpenAxes.Claude.Marketplace`). Installing the plugin registers the MCP server and a `documentation-qa` skill that teaches Claude how to use the two tools -- no manual `claude mcp add` needed.
 
-By default the plugin connects to the **hosted OAassist server** at `https://docassist.openaxes.com/mcp` (streamable HTTP behind the OpenAxes reverse proxy), so a marketplace user has nothing to install locally. To point the plugin at a different deployment -- a self-hosted MSI install on `localhost`, or another host on the LAN -- set the `OAASSIST_URL` environment variable to that server's `/mcp` URL before launching Claude Code (e.g. `OAASSIST_URL=http://localhost:8000/mcp`).
+By default the plugin connects to the **hosted OAassist server** at `https://docassist.openaxes.com/mcp` (streamable HTTP behind the OpenAxes reverse proxy), so a marketplace user has nothing to install locally. To point the plugin at a different deployment -- a self-hosted MSI install on `localhost`, or another host on the LAN -- set the `OAASSIST_URL` environment variable to that server's `/mcp` URL before launching Claude Code (e.g. `OAASSIST_URL=http://localhost:8000/mcp`). If the target server runs with `AUTH_ENABLED=true`, also set `OAASSIST_TOKEN` to a service token minted by the admin (`OAassist.exe manage issue-token <label>`, one per person -- the label is the identity recorded in the query history); while auth is off the variable can stay unset.
 
-The plugin source lives in this repo (`.claude-plugin/`, `skills/`) and is published to the marketplace by CI on every `v*` tag (`.github/workflows/publish-plugin.yml`) -- never edit the marketplace's `plugins/OAassist/` directory by hand.
+The plugin source lives in this repo (`.claude-plugin/`, `skills/`) and is published to the marketplace by CI on every `v*` tag (`.github/workflows/publish-plugin.yml`) -- never edit the marketplace's `plugins/OAassist/` directory by hand. See [`docs/MARKETPLACE.md`](docs/MARKETPLACE.md) for the full publish flow, versioning, and how to cut a new release.
 
 ---
 
 ## Configuration
 
-All settings live in `.env` (development) or `C:\ProgramData\OAassist\OAassist.env` (MSI install). They are read once at startup; restart the service to apply changes.
+All settings live in `.env` (development) or `C:\ProgramData\OAassist\OAassist.env` (MSI install). They are read once at startup; restart the service to apply changes. One exception: the documents root can also be changed at runtime via `PUT /v1/config` (used by the web complement's UI) — the new path is persisted in `settings.json` next to the database, overrides `DATA_PATH`, and the `PUT` triggers a full reindex. `GET /v1/config` shows the path in effect and where it came from.
 
 | Variable | Default | Description |
 |---|---|---|
 | `DATA_PATH` | _(required for ingest/reindex)_ | Absolute path to the documentation root. |
 | `LLM_PROVIDER` | `noop` | One of `noop`, `anthropic`, `ollama`. See [LLM providers](#llm-providers). |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Any [sentence-transformers](https://huggingface.co/sentence-transformers) model. Changing it invalidates existing embeddings — clear `chroma_db/` and re-ingest. |
+| `RERANK_ENABLED` | `false` | Re-rank the dense candidate pool with a cross-encoder before returning. Improves precision (a near-duplicate or off-topic chunk in the top results confuses a small model) at the cost of a model load on first query and per-query CPU scoring. |
+| `RERANK_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Cross-encoder used when `RERANK_ENABLED=true`. `BAAI/bge-reranker-base` is slower but stronger. |
 | `ANTHROPIC_API_KEY` | _(unset)_ | Required when `LLM_PROVIDER=anthropic`. |
 | `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Claude model used for synthesis. |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama daemon URL. Used when `LLM_PROVIDER=ollama`. |
-| `OLLAMA_MODEL` | `phi4-mini` | Ollama model name. Must be `ollama pull`ed in the daemon first. |
-| `OLLAMA_NUM_CTX` | `4096` | Context window for the Ollama call. Caps the KV cache (~128 KB/token on phi4-mini), so it is the main RAM lever. Keep retrieved chunks + `OLLAMA_NUM_PREDICT` under this or Ollama silently drops the earliest tokens. Raise on roomier hardware. |
-| `OLLAMA_NUM_PREDICT` | `768` | Max tokens in a synthesized answer. Default keeps CPU-only generation under the request timeout; raise if answers are being cut short. |
+| `OLLAMA_MODEL` | `qwen3:4b` | Ollama model name. Must be `ollama pull`ed in the daemon first. |
+| `OLLAMA_NUM_CTX` | `4096` | Context window for the Ollama call. Caps the KV cache (~128 KB/token on qwen3:4b), so it is the main RAM lever. Keep retrieved chunks + `OLLAMA_NUM_PREDICT` under this or Ollama silently drops the earliest tokens. Raise on roomier hardware. |
+| `OLLAMA_NUM_PREDICT` | `512` | Max tokens in a synthesized answer. Default keeps CPU-only generation under the request timeout; raise if answers are being cut short. |
 | `OLLAMA_NUM_GPU` | _(unset)_ | Number of model layers to offload to the GPU. Leave unset — Ollama auto-detects a GPU and offloads as many layers as fit in VRAM. Set only to override: `0` forces CPU; a small number offloads partially on a VRAM-limited GPU. |
+| `AUTH_ENABLED` | `false` | Require a bearer service token on `/v1` + `/mcp`. Keep `true` on any reachable install. See [Security](#security). |
+| `DEPLOYMENT_MODE` | `standard` | `on_prem` refuses to start with a non-local LLM provider, guaranteeing document content never leaves the installation. See [docs/LLM_WIKI.md](docs/LLM_WIKI.md). |
+| `LLM_WIKI_ENABLED` | `false` | Query-driven synthesized wiki layer. Off = no wiki components, no extra LLM calls. See [docs/LLM_WIKI.md](docs/LLM_WIKI.md). |
+| `LLM_WIKI_MAX_RESULTS` | `3` | Max wiki notes added to one answer's context. |
+| `LLM_WIKI_RAW_RESULT_WEIGHT` | `1.0` | Authority weight of raw chunks when gating wiki notes. |
+| `LLM_WIKI_PAGE_RESULT_WEIGHT` | `0.8` | Authority weight of wiki pages; lower than the raw weight = stricter gate. |
+| `LLM_WIKI_REQUIRE_APPROVAL` | `false` | Only human-approved wiki pages enter the answer context. |
+| `DATABASE_PATH` | `<ProgramData>\OAassist\oaassist.db` | SQLite file for service tokens and query history. |
 | `LOG_LEVEL` | `INFO` | Logging verbosity. |
 
-OAassist validates the config at startup: if `LLM_PROVIDER=anthropic` but no key is set, or `LLM_PROVIDER` is an unknown value, the service refuses to start with a clear error message.
+OAassist validates the config at startup: if `LLM_PROVIDER=anthropic` but no key is set, `LLM_PROVIDER` is an unknown value, or `DEPLOYMENT_MODE=on_prem` is combined with a non-local provider, the service refuses to start with a clear error message.
 
 ---
 
@@ -277,38 +291,64 @@ OAassist supports three modes for how it produces an answer from the retrieved c
 |---|---|---|
 | `noop` (default) | Returns the raw chunks joined. No synthesis. | When Claude (via MCP) will read the chunks and write the answer itself, or when the calling app has its own LLM. |
 | `anthropic` | Calls Claude over the Anthropic API to synthesize an answer. | When apps call `POST /v1/ask` and need a finished answer. Requires `ANTHROPIC_API_KEY`. |
-| `ollama` | Calls a local Ollama daemon to synthesize an answer. | Offline / air-gapped deployments. Default model `phi4-mini`. Requires a running Ollama daemon with the model pulled. |
+| `ollama` | Calls a local Ollama daemon to synthesize an answer. | Offline / air-gapped deployments. Default model `qwen3:4b`. Requires a running Ollama daemon with the model pulled. |
 
 To switch providers, edit `LLM_PROVIDER` and restart the service.
 
-**Precision (`ollama`).** OAassist calls phi4-mini with `temperature 0` (deterministic, fact-bound). The context window (`OLLAMA_NUM_CTX`) and answer length (`OLLAMA_NUM_PREDICT`) default to values sized for the smallest target — phi4-mini on an 8 GB CPU-only box — and are raisable on roomier hardware. Keep the injected chunks plus `OLLAMA_NUM_PREDICT` under `OLLAMA_NUM_CTX` or the prompt is silently truncated. For higher precision at the cost of RAM and speed, build a higher-quantization variant from `ollama/Modelfile` and point `OLLAMA_MODEL` at it. For the daemon-side memory tuning on constrained boxes, see [`installer/INSTALL.md`](installer/INSTALL.md).
+**Precision (`ollama`).** OAassist calls qwen3:4b with `temperature 0` (deterministic, fact-bound). The context window (`OLLAMA_NUM_CTX`) and answer length (`OLLAMA_NUM_PREDICT`) default to values sized for the smallest target — qwen3:4b on an 8 GB CPU-only box — and are raisable on roomier hardware. Keep the injected chunks plus `OLLAMA_NUM_PREDICT` under `OLLAMA_NUM_CTX` or the prompt is silently truncated. For higher precision at the cost of RAM and speed, build a higher-quantization variant from `ollama/Modelfile` and point `OLLAMA_MODEL` at it. For the daemon-side memory tuning on constrained boxes, see [`installer/INSTALL.md`](installer/INSTALL.md).
 
 ---
 
 ## Multi-app documentation
 
-A single OAassist install can serve multiple apps. Documentation is organized in subfolders by app:
+A single OAassist install can serve multiple apps, each with multiple versions. Documentation is organized in subfolders by app, then by version:
 
 ```
 DATA_PATH/
 ├── radar/
+│   ├── 1.4.0/
+│   └── 1.5.0/
 ├── pure/
 └── ia/
 ```
 
-Each chunk is tagged with the first directory segment (the app name) as metadata. A REST call with `"app": "radar"` filters retrieval to radar chunks only — a Radar question never returns a PuRe chunk.
+Each chunk is tagged with the first directory segment as its **app** and the second as its **version**. A REST call with `"app": "radar"` filters retrieval to radar chunks; add `"version": "1.4.0"` to narrow to one version. A single level (`radar/` with files directly inside) still works — those chunks just have no version. Files directly under `DATA_PATH` get no app tag.
 
-Files placed directly under `DATA_PATH` (not in an app subfolder) get no app tag.
+To re-index one scope, send `{"app": "radar"}` or `{"app": "radar", "version": "1.4.0"}` to `/v1/reindex` — it rebuilds only that scope.
 
-To re-index just one app, send `{"app": "radar"}` to `/v1/reindex`.
+Apps and versions are managed from the separate web complement, which writes into this folder tree and calls `/v1/reindex` — see [`docs/COMPLEMENT.md`](docs/COMPLEMENT.md).
+
+---
+
+## Security
+
+OAassist is the AI engine. The human-facing web — Microsoft sign-in, the admin UI,
+users and roles — lives in a **separate .NET/Angular complement** that calls this
+API with a service token. See [`docs/COMPLEMENT.md`](docs/COMPLEMENT.md).
+
+With `AUTH_ENABLED=true`, **REST (`/v1/*`) and MCP (`/mcp`)** require a bearer
+service token: `Authorization: Bearer <token>`. A `401` means it is missing or
+invalid. Mint a token from the CLI (it prints once, on stdout):
+
+```bash
+uv run python -m src.manage issue-token radar-backend
+# on an MSI install:
+"C:\Program Files\OAassist\OAassist.exe" manage issue-token radar-backend
+```
+
+The calling app asserts who the human is by passing `user.email` in the `/v1/ask`
+body; OAassist records it in the query history.
+
+> **`AUTH_ENABLED=false` is for localhost development only** — it opens `/v1` and
+> `/mcp`. Any reachable deployment must run with `AUTH_ENABLED=true`.
 
 ---
 
 ## API endpoints
 
-All endpoints return JSON. The service listens on port 8000.
+All endpoints return JSON. The service listens on port 8000. When `AUTH_ENABLED=true`, add `-H "Authorization: Bearer <token>"` to the `/v1/*` calls below.
 
-> Integrating another app into OAassist via the REST API? See [`docs/API_INTEGRATION_QUICKSTART.md`](docs/API_INTEGRATION_QUICKSTART.md) for the full request/response contract, including the optional `user` / `page` caller-context fields.
+> Integrating another app into OAassist via the REST API? See [`docs/API_INTEGRATION_QUICKSTART.md`](docs/API_INTEGRATION_QUICKSTART.md) for the full request/response contract, including authentication, the optional `version` filter, and the `user` / `page` caller-context fields.
 
 ### `POST /v1/ask`
 
@@ -337,6 +377,12 @@ curl -X POST http://localhost:8000/v1/reindex \
 ```bash
 curl http://localhost:8000/healthz
 ```
+
+### Other endpoints
+
+- `POST /v1/suggest` and `POST /v1/suggest-questions` — optional context-driven suggestion plugins; contract in [`docs/API_INTEGRATION_QUICKSTART.md`](docs/API_INTEGRATION_QUICKSTART.md).
+- `GET /v1/history` — recent query-log entries.
+- Document, app, and config management (`/v1/apps`, `/v1/documents*`, `GET`/`PUT /v1/config`) — used by the web complement; see [`docs/COMPLEMENT.md`](docs/COMPLEMENT.md).
 
 Ready-to-run scripts in [`examples/curl/`](examples/curl/) and [`examples/powershell/`](examples/powershell/).
 
@@ -515,7 +561,7 @@ rm -rf ~/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2
 ```
 
 **Does OAassist phone home?**
-No. With `LLM_PROVIDER=noop` (the default) nothing leaves the host. With `LLM_PROVIDER=anthropic` only the question + retrieved chunks go to Anthropic. The embedding model runs locally; documents and embeddings never leave the host.
+No. With `LLM_PROVIDER=noop` (the default) nothing leaves the host. With `LLM_PROVIDER=anthropic` the question + retrieved chunks go to Anthropic — for answers and, when `LLM_WIKI_ENABLED=true`, for wiki page synthesis too. The embedding model runs locally; documents and embeddings never leave the host. To make locality a hard guarantee, set `DEPLOYMENT_MODE=on_prem`: the service then refuses to start with any non-local provider.
 
 **Why is the docker image so big (~5.7 GB)?**
 It's mostly torch + transformers. The PyInstaller MSI bundle is much smaller (~860 MB).

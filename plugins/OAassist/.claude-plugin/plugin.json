@@ -1,6 +1,6 @@
 {
   "name": "OAassist",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "OAassist -- documentation Q&A over the OpenAxes knowledge base (Radar, PuRe, IA) via MCP.",
   "author": {
     "name": "OpenAxes"
@@ -8,7 +8,10 @@
   "mcpServers": {
     "OAassist": {
       "type": "http",
-      "url": "${OAASSIST_URL:-https://docassist.openaxes.com/mcp}"
+      "url": "${OAASSIST_URL:-https://docassist.openaxes.com/mcp}",
+      "headers": {
+        "Authorization": "Bearer ${OAASSIST_TOKEN:-}"
+      }
     }
   }
 }

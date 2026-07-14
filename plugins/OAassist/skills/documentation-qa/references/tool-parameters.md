@@ -8,6 +8,7 @@ Search the indexed documentation by semantic similarity. Read-only.
 |---|---|---|---|
 | `query` | string | yes | Search terms, not a conversational sentence. Key nouns, entities, product names, identifiers, dates; drop filler and question words. Prefer the document's own vocabulary over the user's phrasing. If a search misses, retry with different or broader terms. |
 | `app` | string or null | no | Restricts the search to one app's documentation. Known values: `"radar"`, `"pure"`, `"ia"` (the first directory segment under the service's documentation root). Omit for an unfiltered search. |
+| `version` | string or null | no | Further restricts the search to one version of that app's documentation (e.g. `"1.4.0"`). Omit for all versions. |
 
 Returns: a text block with the relevant information found, followed by a
 `Sources:` list of `<file name> -- <section>` entries. If nothing relevant is
