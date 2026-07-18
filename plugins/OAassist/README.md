@@ -119,7 +119,7 @@ cp .env.example .env
 
 Edit `.env`. The indispensable variable is **`DATA_PATH`** — absolute path to your documentation root. Without it the service starts but `/v1/reindex` returns 500 and there is nothing to answer about.
 
-If you want synthesized answers instead of raw chunks, also set `LLM_PROVIDER=anthropic` (+ `ANTHROPIC_API_KEY`) for Claude, or `LLM_PROVIDER=ollama` for a local Ollama daemon (default model `qwen3:4b`). See [Configuration](#configuration) for the full list.
+If you want synthesized answers instead of raw chunks, also set `LLM_PROVIDER=anthropic` (+ `ANTHROPIC_API_KEY`) for Claude, or `LLM_PROVIDER=ollama` for a local Ollama daemon (default model `gemma4:12b`; use `qwen3:4b` on a small box). See [Configuration](#configuration) for the full list.
 
 ### 4. Index your documents
 
@@ -260,13 +260,21 @@ All settings live in `.env` (development) or `C:\ProgramData\OAassist\OAassist.e
 | `DATA_PATH` | _(required for ingest/reindex)_ | Absolute path to the documentation root. |
 | `LLM_PROVIDER` | `noop` | One of `noop`, `anthropic`, `ollama`. See [LLM providers](#llm-providers). |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Any [sentence-transformers](https://huggingface.co/sentence-transformers) model. Changing it invalidates existing embeddings — clear `chroma_db/` and re-ingest. |
-| `RERANK_ENABLED` | `false` | Re-rank the dense candidate pool with a cross-encoder before returning. Improves precision (a near-duplicate or off-topic chunk in the top results confuses a small model) at the cost of a model load on first query and per-query CPU scoring. |
-| `RERANK_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Cross-encoder used when `RERANK_ENABLED=true`. `BAAI/bge-reranker-base` is slower but stronger. |
+| `HYBRID_LEXICAL_ENABLED` | `true` | Run a corpus-wide BM25 lexical search alongside dense recall so a strong keyword match outside the dense top-K is still reachable, then fuse both with RRF. A failing/empty lexical index degrades to dense-only. Off = the legacy dense-pool lexical re-rank. |
+| `HYBRID_DENSE_TOP_K` | `15` | Dense candidates pulled per query. |
+| `HYBRID_LEXICAL_TOP_K` | `15` | Corpus-wide lexical (BM25) candidates pulled per query. |
+| `HYBRID_CANDIDATE_LIMIT` | `30` | Cap on the merged dense+lexical union before final selection. |
+| `HYBRID_FINAL_TOP_K` | `5` | Final chunks selected when a request omits `max_chunks` (which otherwise wins). |
+| `SECTION_EXPANSION_ENABLED` | `true` | After selecting chunks, feed the LLM the whole verbatim markdown section each chunk belongs to (so evidence split across sibling chunks travels together), deduped and capped, with a raw-chunk fallback. Zero LLM, no generation. This is the automatic REST-side form of the section read an MCP client does via `read_document`. |
+| `SECTION_EXPANSION_MAX_CHARS` | `5000` | Cap per expanded section — the largest enclosing section under this size is chosen; bigger chapters degrade to a subsection. The document-title level is never selected (no whole-doc dumps). |
+| `SECTION_EXPANSION_MAX_TOTAL_CHARS` | `12000` | Cap on the combined expanded context, to bound prompt size and latency. |
+| `RERANK_ENABLED` | `false` | Re-rank the hybrid candidate union with a cross-encoder before final selection, so a highly-relevant chunk that fusion left just outside the top-K is promoted. Reranker scores are recorded separately (they never overwrite the vector distance); a reranker that can't load falls back to the fusion order without failing the request. Costs a model load on first query + per-query scoring. |
+| `RERANK_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Cross-encoder used when `RERANK_ENABLED=true`. The default is small/fast but measured too weak to surface a specific evidentiary chunk on hard multi-chunk questions; **`BAAI/bge-reranker-base` is stronger** (recovers those cases) at ~1.1 GB and slower — prefer it on a GPU/roomy box. |
 | `ANTHROPIC_API_KEY` | _(unset)_ | Required when `LLM_PROVIDER=anthropic`. |
 | `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Claude model used for synthesis. |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama daemon URL. Used when `LLM_PROVIDER=ollama`. |
-| `OLLAMA_MODEL` | `qwen3:4b` | Ollama model name. Must be `ollama pull`ed in the daemon first. |
-| `OLLAMA_NUM_CTX` | `4096` | Context window for the Ollama call. Caps the KV cache (~128 KB/token on qwen3:4b), so it is the main RAM lever. Keep retrieved chunks + `OLLAMA_NUM_PREDICT` under this or Ollama silently drops the earliest tokens. Raise on roomier hardware. |
+| `OLLAMA_MODEL` | `gemma4:12b` | Ollama model name. Must be `ollama pull`ed in the daemon first. `gemma4:12b` gives cleaner answers (~9 GB RAM/VRAM); `qwen3:4b` is the low-resource floor (~3.5 GB). |
+| `OLLAMA_NUM_CTX` | `4096` | Context window for the Ollama call. Caps the KV cache, so it is the main RAM lever. Keep retrieved chunks + `OLLAMA_NUM_PREDICT` under this or Ollama silently drops the earliest tokens. Raise on roomier hardware. |
 | `OLLAMA_NUM_PREDICT` | `512` | Max tokens in a synthesized answer. Default keeps CPU-only generation under the request timeout; raise if answers are being cut short. |
 | `OLLAMA_NUM_GPU` | _(unset)_ | Number of model layers to offload to the GPU. Leave unset — Ollama auto-detects a GPU and offloads as many layers as fit in VRAM. Set only to override: `0` forces CPU; a small number offloads partially on a VRAM-limited GPU. |
 | `AUTH_ENABLED` | `false` | Require a bearer service token on `/v1` + `/mcp`. Keep `true` on any reachable install. See [Security](#security). |
@@ -291,11 +299,11 @@ OAassist supports three modes for how it produces an answer from the retrieved c
 |---|---|---|
 | `noop` (default) | Returns the raw chunks joined. No synthesis. | When Claude (via MCP) will read the chunks and write the answer itself, or when the calling app has its own LLM. |
 | `anthropic` | Calls Claude over the Anthropic API to synthesize an answer. | When apps call `POST /v1/ask` and need a finished answer. Requires `ANTHROPIC_API_KEY`. |
-| `ollama` | Calls a local Ollama daemon to synthesize an answer. | Offline / air-gapped deployments. Default model `qwen3:4b`. Requires a running Ollama daemon with the model pulled. |
+| `ollama` | Calls a local Ollama daemon to synthesize an answer. | Offline / air-gapped deployments. Default model `gemma4:12b` (or `qwen3:4b` on a small box). Requires a running Ollama daemon with the model pulled. |
 
 To switch providers, edit `LLM_PROVIDER` and restart the service.
 
-**Precision (`ollama`).** OAassist calls qwen3:4b with `temperature 0` (deterministic, fact-bound). The context window (`OLLAMA_NUM_CTX`) and answer length (`OLLAMA_NUM_PREDICT`) default to values sized for the smallest target — qwen3:4b on an 8 GB CPU-only box — and are raisable on roomier hardware. Keep the injected chunks plus `OLLAMA_NUM_PREDICT` under `OLLAMA_NUM_CTX` or the prompt is silently truncated. For higher precision at the cost of RAM and speed, build a higher-quantization variant from `ollama/Modelfile` and point `OLLAMA_MODEL` at it. For the daemon-side memory tuning on constrained boxes, see [`installer/INSTALL.md`](installer/INSTALL.md).
+**Precision (`ollama`).** OAassist calls the model with a low temperature (deterministic, fact-bound). `gemma4:12b` (default) gives the cleanest, most direct answers but wants ~9 GB of RAM/VRAM; `qwen3:4b` is the low-resource floor (~3.5 GB) for a small CPU-only box, at the cost of wordier answers. The context window (`OLLAMA_NUM_CTX`) and answer length (`OLLAMA_NUM_PREDICT`) default to values sized for the smallest target and are raisable on roomier hardware. Keep the injected chunks plus `OLLAMA_NUM_PREDICT` under `OLLAMA_NUM_CTX` or the prompt is silently truncated. For the daemon-side memory tuning on constrained boxes, see [`installer/INSTALL.md`](installer/INSTALL.md).
 
 ---
 
