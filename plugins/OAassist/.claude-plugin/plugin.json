@@ -8,7 +8,7 @@
   "mcpServers": {
     "OAassist": {
       "type": "http",
-      "url": "${OAASSIST_URL:-https://docassist.openaxes.com/mcp}",
+      "url": "${OAASSIST_URL:-https://assist.openaxes.com/mcp}",
       "headers": {
         "Authorization": "Bearer ${OAASSIST_TOKEN:-}"
       }
