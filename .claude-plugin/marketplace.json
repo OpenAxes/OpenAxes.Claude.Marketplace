@@ -20,7 +20,7 @@
       "name": "OAassist",
       "source": "./plugins/OAassist",
       "description": "OAassist — documentation Q&A over the OpenAxes knowledge base (Radar, PuRe, IA) via MCP.",
-      "version": "1.2.3",
+      "version": "1.2.4",
       "author": {
         "name": "OpenAxes"
       }

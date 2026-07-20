@@ -73,7 +73,7 @@ curl -X POST http://localhost:8000/v1/reindex -H "Content-Type: application/json
 curl http://localhost:8000/healthz
 ```
 
-You should see `{"status":"ready","model_loaded":true,"collection_size":N}`. For service control and logs see [Troubleshooting](#troubleshooting).
+You should see `{"status":"ready","model_loaded":true,"collection_size":N,"version":"..."}` (`version` is the release tag, or `"dev"` when running from source). For service control and logs see [Troubleshooting](#troubleshooting).
 
 ---
 
@@ -245,7 +245,7 @@ To test, ask Claude: *"Use ask_documentation to find [something you know is in y
 
 OAassist is also packaged as a Claude plugin, distributed through the OpenAxes plugin marketplace (`OpenAxes/OpenAxes.Claude.Marketplace`). Installing the plugin registers the MCP server and a `documentation-qa` skill that teaches Claude how to use the two tools -- no manual `claude mcp add` needed.
 
-By default the plugin connects to the **hosted OAassist server** at `https://assist.openaxes.com/mcp` (streamable HTTP behind the OpenAxes reverse proxy), so a marketplace user has nothing to install locally. To point the plugin at a different deployment -- a self-hosted MSI install on `localhost`, or another host on the LAN -- set the `OAASSIST_URL` environment variable to that server's `/mcp` URL before launching Claude Code (e.g. `OAASSIST_URL=http://localhost:8000/mcp`). If the target server runs with `AUTH_ENABLED=true`, also set `OAASSIST_TOKEN` to a service token minted by the admin (`OAassist.exe manage issue-token <label>`, one per person -- the label is the identity recorded in the query history); while auth is off the variable can stay unset.
+By default the plugin connects to the **hosted OAassist server** at `https://assist.openaxes.com/mcp` (streamable HTTP behind the OpenAxes reverse proxy), so a marketplace user has nothing to install locally. To point the plugin at a different deployment -- a self-hosted MSI install on `localhost`, or another host on the LAN -- set the `OAASSIST_URL` environment variable to that server's `/mcp` URL before launching Claude Code (e.g. `OAASSIST_URL=http://localhost:8000/mcp`). The hosted server runs with `AUTH_ENABLED=true`, so also set `OAASSIST_TOKEN` to your personal service token (the admin mints one per person with `OAassist.exe manage issue-token <label>` -- the label is the identity recorded in the query history). Only against a dev server with auth off can the variable stay unset.
 
 The plugin source lives in this repo (`.claude-plugin/`, `skills/`) and is published to the marketplace by CI on every `v*` tag (`.github/workflows/publish-plugin.yml`) -- never edit the marketplace's `plugins/OAassist/` directory by hand. See [`docs/MARKETPLACE.md`](docs/MARKETPLACE.md) for the full publish flow, versioning, and how to cut a new release.
 
@@ -258,6 +258,7 @@ All settings live in `.env` (development) or `C:\ProgramData\OAassist\OAassist.e
 | Variable | Default | Description |
 |---|---|---|
 | `DATA_PATH` | _(required for ingest/reindex)_ | Absolute path to the documentation root. |
+| `PORT` | `8000` | HTTP port for the unified service (REST + MCP). Mainly for CI smoke tests and port conflicts; the proxy and docs assume 8000. |
 | `LLM_PROVIDER` | `noop` | One of `noop`, `anthropic`, `ollama`. See [LLM providers](#llm-providers). |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Any [sentence-transformers](https://huggingface.co/sentence-transformers) model. Changing it invalidates existing embeddings — clear `chroma_db/` and re-ingest. |
 | `HYBRID_LEXICAL_ENABLED` | `true` | Run a corpus-wide BM25 lexical search alongside dense recall so a strong keyword match outside the dense top-K is still reachable, then fuse both with RRF. A failing/empty lexical index degrades to dense-only. Off = the legacy dense-pool lexical re-rank. |

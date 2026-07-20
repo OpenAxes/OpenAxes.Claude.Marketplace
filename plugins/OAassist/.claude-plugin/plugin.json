@@ -1,6 +1,6 @@
 {
   "name": "OAassist",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "OAassist -- documentation Q&A over the OpenAxes knowledge base (Radar, PuRe, IA) via MCP.",
   "author": {
     "name": "OpenAxes"
