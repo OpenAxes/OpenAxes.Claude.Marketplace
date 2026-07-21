@@ -286,6 +286,7 @@ All settings live in `.env` (development) or `C:\ProgramData\OAassist\OAassist.e
 | `LLM_WIKI_PAGE_RESULT_WEIGHT` | `0.8` | Authority weight of wiki pages; lower than the raw weight = stricter gate. |
 | `LLM_WIKI_REQUIRE_APPROVAL` | `false` | Only human-approved wiki pages enter the answer context. |
 | `DATABASE_PATH` | `<ProgramData>\OAassist\oaassist.db` | SQLite file for service tokens and query history. |
+| `HISTORY_RETENTION_DAYS` | `365` | How long query-history rows are kept. Older rows are purged once a day. `0` keeps everything forever. |
 | `LOG_LEVEL` | `INFO` | Logging verbosity. |
 
 OAassist validates the config at startup: if `LLM_PROVIDER=anthropic` but no key is set, `LLM_PROVIDER` is an unknown value, or `DEPLOYMENT_MODE=on_prem` is combined with a non-local provider, the service refuses to start with a clear error message.
