@@ -349,6 +349,21 @@ uv run python -m src.manage issue-token radar-backend
 The calling app asserts who the human is by passing `user.email` in the `/v1/ask`
 body; OAassist records it in the query history.
 
+### Repairing the schema
+
+The relational schema is upgraded by numbered SQL deltas applied at startup. To
+inspect or repair an install without opening the SQLite file:
+
+```bash
+"C:\Program Files\OAassist\OAassist.exe" manage migrate --status   # report only
+"C:\Program Files\OAassist\OAassist.exe" manage migrate            # apply pending
+```
+
+A delta whose change is already in place is recorded as applied rather than
+failing, so running this is safe at any time. Startup refuses to continue if the
+install has no migration files at all — that means a broken package, not a
+database to repair.
+
 > **`AUTH_ENABLED=false` is for localhost development only** — it opens `/v1` and
 > `/mcp`. Any reachable deployment must run with `AUTH_ENABLED=true`.
 
@@ -392,6 +407,7 @@ curl http://localhost:8000/healthz
 
 - `POST /v1/suggest` and `POST /v1/suggest-questions` — optional context-driven suggestion plugins; contract in [`docs/API_INTEGRATION_QUICKSTART.md`](docs/API_INTEGRATION_QUICKSTART.md).
 - `GET /v1/history` — recent query-log entries.
+- `POST /v1/activity` — the apps deliver what their users did, in the envelope OAassist defines, using a token bound to their app. Prototype; contract in [`docs/API_INTEGRATION_QUICKSTART.md`](docs/API_INTEGRATION_QUICKSTART.md), and the .NET client that speaks it lives in [`sdk/`](sdk/).
 - Document, app, and config management (`/v1/apps`, `/v1/documents*`, `GET`/`PUT /v1/config`) — used by the web complement; see [`docs/COMPLEMENT.md`](docs/COMPLEMENT.md).
 
 Ready-to-run scripts in [`examples/curl/`](examples/curl/) and [`examples/powershell/`](examples/powershell/).
