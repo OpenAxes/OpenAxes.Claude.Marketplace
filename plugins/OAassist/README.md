@@ -247,7 +247,7 @@ OAassist is also packaged as a Claude plugin, distributed through the OpenAxes p
 
 By default the plugin connects to the **hosted OAassist server** at `https://assist.openaxes.com/mcp` (streamable HTTP behind the OpenAxes reverse proxy), so a marketplace user has nothing to install locally. To point the plugin at a different deployment -- a self-hosted MSI install on `localhost`, or another host on the LAN -- set the `OAASSIST_URL` environment variable to that server's `/mcp` URL before launching Claude Code (e.g. `OAASSIST_URL=http://localhost:8000/mcp`). The hosted server runs with `AUTH_ENABLED=true`, so also set `OAASSIST_TOKEN` to your personal service token (the admin mints one per person with `OAassist.exe manage issue-token <label>` -- the label is the identity recorded in the query history). Only against a dev server with auth off can the variable stay unset.
 
-The plugin source lives in this repo (`.claude-plugin/`, `skills/`) and is published to the marketplace by CI on every `v*` tag (`.github/workflows/publish-plugin.yml`) -- never edit the marketplace's `plugins/OAassist/` directory by hand. See [`docs/MARKETPLACE.md`](docs/MARKETPLACE.md) for the full publish flow, versioning, and how to cut a new release.
+The plugin source lives in this repo (`.claude-plugin/`, `skills/`) and is published to the marketplace by CI on every `v*` tag (`.github/workflows/publish-plugin.yml`) -- never edit the marketplace's `plugins/OAassist/` directory by hand. See [`docs/operations/MARKETPLACE.md`](docs/operations/MARKETPLACE.md) for the full publish flow, versioning, and how to cut a new release.
 
 ---
 
@@ -261,6 +261,8 @@ All settings live in `.env` (development) or `C:\ProgramData\OAassist\OAassist.e
 | `PORT` | `8000` | HTTP port for the unified service (REST + MCP). Mainly for CI smoke tests and port conflicts; the proxy and docs assume 8000. |
 | `LLM_PROVIDER` | `noop` | One of `noop`, `anthropic`, `ollama`. See [LLM providers](#llm-providers). |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Any [sentence-transformers](https://huggingface.co/sentence-transformers) model. Changing it invalidates existing embeddings — clear `chroma_db/` and re-ingest. |
+| `RELEVANCE_MAX_DISTANCE` | `0.73` | Best-match distance above which retrieval counts as a miss: the LLM is never called and the caller gets the no-results guidance with `sources: []`. This is the mechanical defence that keeps junk and prompt-injection attempts away from the model. Corpus- and model-specific — recalibrate with `testing/eval_gate.py` after changing `EMBEDDING_MODEL` or replacing the corpus. It gates *topical* distance only; it cannot tell that a relevant-looking chunk fails to answer the question. |
+| `INDEX_EXCLUDE` | _(empty)_ | Comma-separated filenames to skip at index time (case-insensitive). For example/playbook files that are not product documentation and pollute retrieval by surfacing as top sources. |
 | `HYBRID_LEXICAL_ENABLED` | `true` | Run a corpus-wide BM25 lexical search alongside dense recall so a strong keyword match outside the dense top-K is still reachable, then fuse both with RRF. A failing/empty lexical index degrades to dense-only. Off = the legacy dense-pool lexical re-rank. |
 | `HYBRID_DENSE_TOP_K` | `15` | Dense candidates pulled per query. |
 | `HYBRID_LEXICAL_TOP_K` | `15` | Corpus-wide lexical (BM25) candidates pulled per query. |
@@ -287,9 +289,10 @@ All settings live in `.env` (development) or `C:\ProgramData\OAassist\OAassist.e
 | `LLM_WIKI_REQUIRE_APPROVAL` | `false` | Only human-approved wiki pages enter the answer context. |
 | `DATABASE_PATH` | `<ProgramData>\OAassist\oaassist.db` | SQLite file for service tokens and query history. |
 | `HISTORY_RETENTION_DAYS` | `365` | How long query-history rows are kept. Older rows are purged once a day. `0` keeps everything forever. |
+| `ACTIVITY_MAX_EVENTS_PER_USER` | `1000` | Cap on stored activity rows **per subject** — one person, at one client, in one app. Per-subject and not global on purpose: two people at the same client must never compete for one budget, or the busier one erases the other's behaviour pattern. The newest rows are kept. `0` keeps everything. See [docs/ACTIVITY_INTAKE.md](docs/ACTIVITY_INTAKE.md). |
 | `LOG_LEVEL` | `INFO` | Logging verbosity. |
 
-OAassist validates the config at startup: if `LLM_PROVIDER=anthropic` but no key is set, `LLM_PROVIDER` is an unknown value, or `DEPLOYMENT_MODE=on_prem` is combined with a non-local provider, the service refuses to start with a clear error message.
+OAassist validates the config at startup and refuses to start with a clear error message when: `LLM_PROVIDER=anthropic` but no key is set; `LLM_PROVIDER` or `DEPLOYMENT_MODE` is an unknown value; `DEPLOYMENT_MODE=on_prem` is combined with a non-local provider; or any of `RELEVANCE_MAX_DISTANCE`, the `HYBRID_*` top-k values, the `SECTION_EXPANSION_MAX_*` caps or the `LLM_WIKI_*_WEIGHT` weights is zero or negative (`HISTORY_RETENTION_DAYS` and `ACTIVITY_MAX_EVENTS_PER_USER` accept `0`, which means "keep everything").
 
 ---
 
@@ -341,10 +344,17 @@ service token: `Authorization: Bearer <token>`. A `401` means it is missing or
 invalid. Mint a token from the CLI (it prints once, on stdout):
 
 ```bash
-uv run python -m src.manage issue-token radar-backend
+uv run python -m src.manage issue-token radar-backend --app radar
+# restrict what it may be answered from (repeatable; omit for unrestricted):
+uv run python -m src.manage issue-token cocacola --scope radar:1.4.0 --scope pure
 # on an MSI install:
-"C:\Program Files\OAassist\OAassist.exe" manage issue-token radar-backend
+"C:\Program Files\OAassist\OAassist.exe" manage issue-token radar-backend --app radar
 ```
+
+`--app` is the one app a token may deliver activity as; `--scope` is the set it
+may be *answered from*, optionally pinned to a documentation version. A token
+with no scopes is unrestricted, so existing credentials are unaffected. Full
+guide: [docs/TOKENS_HOWTO.md](docs/TOKENS_HOWTO.md).
 
 The calling app asserts who the human is by passing `user.email` in the `/v1/ask`
 body; OAassist records it in the query history.
@@ -396,6 +406,17 @@ curl -X POST http://localhost:8000/v1/reindex \
 curl -X POST http://localhost:8000/v1/reindex \
      -H "Content-Type: application/json" -d '{"app":"radar"}'
 ```
+
+**Cost.** A reindex re-embeds every chunk in scope, one at a time, so the time
+it takes is linear in the size of the corpus and dominated by the embedding
+model — minutes on a large corpus on a CPU-only box. Scope it to one app when
+only that app's documents changed; the other scopes are left untouched.
+
+**After upgrading to a build that stores new chunk metadata** (document title
+and section breadcrumb, added 2026-08-03), run a full reindex to pick it up.
+Nothing breaks while it runs: `/v1/suggest` falls back to the document file name
+for any chunk that does not have a title yet, so a half-reindexed install keeps
+answering normally and simply shows the older labels until it finishes.
 
 ### `GET /healthz`
 
@@ -461,7 +482,7 @@ OAassist/
 └── docs/                # Architecture, integration quickstart, MCP, build record
 ```
 
-For the full architecture and target design, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). For the staged build plan, [`docs/PHASE1_PLAN.md`](docs/PHASE1_PLAN.md).
+For the full architecture and target design, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). For the staged build plan, [`docs/plans/PHASE1_PLAN.md`](docs/plans/PHASE1_PLAN.md).
 
 ---
 
@@ -487,7 +508,7 @@ A simple load tester is included:
 uv run testing/load_test.py --concurrency 10 --duration 60
 ```
 
-It reports throughput and p50 / p95 / p99 latency. See [`docs/QA_CHECKLIST.md`](docs/QA_CHECKLIST.md) for the full release QA matrix.
+It reports throughput and p50 / p95 / p99 latency. See [`docs/operations/QA_CHECKLIST.md`](docs/operations/QA_CHECKLIST.md) for the full release QA matrix.
 
 ---
 
