@@ -478,9 +478,19 @@ OAassist/
 ├── installer/           # WiX MSI definition + INSTALL.md
 ├── examples/            # curl, PowerShell, MCP registration
 ├── scripts/             # build-msi.ps1 (MSI build)
+├── sdk/                 # Two .NET packages, published on every v* tag:
+│   ├── OpenAxes.OAassist.Client/           # read: ask, suggest, documents
+│   └── OpenAxes.OAassist.Activity.Client/  # write: deliver user activity
 ├── testing/             # test/eval tooling: test_llm.py, load_test.py, eval_retrieval.py
 └── docs/                # Architecture, integration quickstart, MCP, build record
 ```
+
+The two `sdk/` packages are independent on purpose — separate projects,
+changelogs and publish workflows. Reading documentation and delivering activity
+are different jobs with different tokens, and an app may want one without the
+other. On .NET, take the package instead of writing an HTTP client: contract
+drift then arrives as a version bump rather than as a field that silently stops
+appearing.
 
 For the full architecture and target design, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). For the staged build plan, [`docs/plans/PHASE1_PLAN.md`](docs/plans/PHASE1_PLAN.md).
 
