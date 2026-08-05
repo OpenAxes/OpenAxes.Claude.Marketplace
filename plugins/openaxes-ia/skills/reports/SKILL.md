@@ -5,7 +5,7 @@ description: >
   "generate a report", "schedule a report", "export report data", "get report data",
   or any task involving listing, executing, or scheduling reports in OpenAxes IA.
 metadata:
-  version: "0.3.0"
+  version: "0.3.1"
 ---
 
 # Reports — OpenAxes IA
@@ -42,6 +42,11 @@ Key considerations:
 - Filters are report-specific — check `list_reports` to see available filters
 - Date-range filters accept either `{ "from": "...", "to": "..." }` as a single object, or split as `filterNameFrom` / `filterNameTo`
 - Unknown filter names are rejected
+- Reports scoped to an investigation or an export batch are authorized against that scope. Supplying an
+  investigation you cannot read, an export batch you cannot reach, or an export batch that belongs to a
+  different investigation than the one supplied, returns `authorization_failure` (or `not_found` when the
+  named batch or investigation does not exist) instead of data — holding `report.execute` alone is not
+  sufficient to run such a report for an arbitrary investigation
 
 When the user asks to run a report, first call `list_reports` to find the right one and understand its filters. Present filter options to the user if the report has required filters.
 
