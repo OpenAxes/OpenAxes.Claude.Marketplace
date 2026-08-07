@@ -260,6 +260,7 @@ All settings live in `.env` (development) or `C:\ProgramData\OAassist\OAassist.e
 | `DATA_PATH` | _(required for ingest/reindex)_ | Absolute path to the documentation root. |
 | `PORT` | `8000` | HTTP port for the unified service (REST + MCP). Mainly for CI smoke tests and port conflicts; the proxy and docs assume 8000. |
 | `LLM_PROVIDER` | `noop` | One of `noop`, `anthropic`, `ollama`, `azure_openai`. See [LLM providers](#llm-providers). |
+| `MCP_LLM_PROVIDER` | _(inherits `LLM_PROVIDER`)_ | What the MCP path answers with, when it must differ from REST. Set it to `noop` whenever `LLM_PROVIDER` is a paid one — see [LLM providers](#llm-providers). |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Any [sentence-transformers](https://huggingface.co/sentence-transformers) model. Changing it invalidates existing embeddings — clear `chroma_db/` and re-ingest. |
 | `RELEVANCE_MAX_DISTANCE` | `0.73` | Best-match distance above which retrieval counts as a miss: the LLM is never called and the caller gets the no-results guidance with `sources: []`. This is the mechanical defence that keeps junk and prompt-injection attempts away from the model. Corpus- and model-specific — recalibrate with `testing/eval_gate.py` after changing `EMBEDDING_MODEL` or replacing the corpus. It gates *topical* distance only; it cannot tell that a relevant-looking chunk fails to answer the question. |
 | `INDEX_EXCLUDE` | _(empty)_ | Comma-separated filenames to skip at index time (case-insensitive). For example/playbook files that are not product documentation and pollute retrieval by surfacing as top sources. |
@@ -312,6 +313,8 @@ OAassist supports four modes for how it produces an answer from the retrieved ch
 | `ollama` | Calls a local Ollama daemon to synthesize an answer. | Offline / air-gapped deployments. Default model `gemma4:12b` (or `qwen3:4b` on a small box). Requires a running Ollama daemon with the model pulled. |
 
 To switch providers, edit `LLM_PROVIDER` and restart the service.
+
+**The MCP path usually wants a different provider from REST.** A connected MCP client (Claude Code / Desktop) is itself a language model: it reads the excerpts and writes the answer. Synthesizing first hands it a second model's summary of the evidence *instead of* the evidence, and on a paid provider it bills for the privilege. `LLM_PROVIDER` alone cannot express that — one process, one provider — so `MCP_LLM_PROVIDER` overrides it for `/mcp` only. **Set `MCP_LLM_PROVIDER=noop` whenever `LLM_PROVIDER` is `anthropic` or `azure_openai`.** Unset means "same as `LLM_PROVIDER`", which is how every install behaved before this setting existed.
 
 **Finding the two Azure values that are easy to get wrong.** `AZURE_OPENAI_ENDPOINT` is the resource root and nothing else (`https://<resource>.openai.azure.com` or `https://<resource>.services.ai.azure.com` for an AI Foundry resource) — the portal's "Target URI" includes a path, and that path must be dropped. `AZURE_OPENAI_DEPLOYMENT` is the deployment's own name, which is frequently neither the resource name nor the model name. To list what a resource actually exposes:
 
