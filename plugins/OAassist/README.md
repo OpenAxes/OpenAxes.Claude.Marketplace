@@ -43,7 +43,7 @@ C:\ProgramData\OAassist\OAassist.env
 
 The indispensable variable is **`DATA_PATH`** — absolute path to your documentation root. Without it the service starts but cannot index or answer.
 
-For synthesized answers, also set `LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` (cloud, via Claude) or `LLM_PROVIDER=ollama` (offline, via a local Ollama daemon). Default is `noop` — returns raw chunks. See [Configuration](#configuration) below.
+For synthesized answers, also set `LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` (cloud, via Claude), `LLM_PROVIDER=azure_openai` (cloud, via your own Azure OpenAI resource) or `LLM_PROVIDER=ollama` (offline, via a local Ollama daemon). Default is `noop` — returns raw chunks. See [Configuration](#configuration) below.
 
 ### 3. Drop your documentation
 
@@ -259,7 +259,7 @@ All settings live in `.env` (development) or `C:\ProgramData\OAassist\OAassist.e
 |---|---|---|
 | `DATA_PATH` | _(required for ingest/reindex)_ | Absolute path to the documentation root. |
 | `PORT` | `8000` | HTTP port for the unified service (REST + MCP). Mainly for CI smoke tests and port conflicts; the proxy and docs assume 8000. |
-| `LLM_PROVIDER` | `noop` | One of `noop`, `anthropic`, `ollama`. See [LLM providers](#llm-providers). |
+| `LLM_PROVIDER` | `noop` | One of `noop`, `anthropic`, `ollama`, `azure_openai`. See [LLM providers](#llm-providers). |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Any [sentence-transformers](https://huggingface.co/sentence-transformers) model. Changing it invalidates existing embeddings — clear `chroma_db/` and re-ingest. |
 | `RELEVANCE_MAX_DISTANCE` | `0.73` | Best-match distance above which retrieval counts as a miss: the LLM is never called and the caller gets the no-results guidance with `sources: []`. This is the mechanical defence that keeps junk and prompt-injection attempts away from the model. Corpus- and model-specific — recalibrate with `testing/eval_gate.py` after changing `EMBEDDING_MODEL` or replacing the corpus. It gates *topical* distance only; it cannot tell that a relevant-looking chunk fails to answer the question. |
 | `INDEX_EXCLUDE` | _(empty)_ | Comma-separated filenames to skip at index time (case-insensitive). For example/playbook files that are not product documentation and pollute retrieval by surfacing as top sources. |
@@ -275,6 +275,10 @@ All settings live in `.env` (development) or `C:\ProgramData\OAassist\OAassist.e
 | `RERANK_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Cross-encoder used when `RERANK_ENABLED=true`. The default is small/fast but measured too weak to surface a specific evidentiary chunk on hard multi-chunk questions; **`BAAI/bge-reranker-base` is stronger** (recovers those cases) at ~1.1 GB and slower — prefer it on a GPU/roomy box. |
 | `ANTHROPIC_API_KEY` | _(unset)_ | Required when `LLM_PROVIDER=anthropic`. |
 | `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Claude model used for synthesis. |
+| `AZURE_OPENAI_ENDPOINT` | _(unset)_ | Required when `LLM_PROVIDER=azure_openai`. The resource root with no path: `https://<resource>.openai.azure.com`. |
+| `AZURE_OPENAI_API_KEY` | _(unset)_ | Required when `LLM_PROVIDER=azure_openai`. |
+| `AZURE_OPENAI_DEPLOYMENT` | _(unset)_ | Required when `LLM_PROVIDER=azure_openai`. The name given to the model in the Azure portal — what the URL addresses, frequently not the model name. |
+| `AZURE_OPENAI_API_VERSION` | `2024-10-21` | Azure dates its API surface; this is pinned so request validation cannot change under a running install. Raise it only when a deployment needs a newer surface. |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama daemon URL. Used when `LLM_PROVIDER=ollama`. |
 | `OLLAMA_MODEL` | `gemma4:12b` | Ollama model name. Must be `ollama pull`ed in the daemon first. `gemma4:12b` gives cleaner answers (~9 GB RAM/VRAM); `qwen3:4b` is the low-resource floor (~3.5 GB). |
 | `OLLAMA_NUM_CTX` | `4096` | Context window for the Ollama call. Caps the KV cache, so it is the main RAM lever. Keep retrieved chunks + `OLLAMA_NUM_PREDICT` under this or Ollama silently drops the earliest tokens. Raise on roomier hardware. |
@@ -298,15 +302,22 @@ OAassist validates the config at startup and refuses to start with a clear error
 
 ## LLM providers
 
-OAassist supports three modes for how it produces an answer from the retrieved chunks:
+OAassist supports four modes for how it produces an answer from the retrieved chunks:
 
 | Provider | What it does | When to use it |
 |---|---|---|
 | `noop` (default) | Returns the raw chunks joined. No synthesis. | When Claude (via MCP) will read the chunks and write the answer itself, or when the calling app has its own LLM. |
 | `anthropic` | Calls Claude over the Anthropic API to synthesize an answer. | When apps call `POST /v1/ask` and need a finished answer. Requires `ANTHROPIC_API_KEY`. |
+| `azure_openai` | Calls a model deployed in your own Azure OpenAI resource. | Same job as `anthropic`, when the cloud LLM has to be your Azure subscription. Requires `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_DEPLOYMENT`. |
 | `ollama` | Calls a local Ollama daemon to synthesize an answer. | Offline / air-gapped deployments. Default model `gemma4:12b` (or `qwen3:4b` on a small box). Requires a running Ollama daemon with the model pulled. |
 
 To switch providers, edit `LLM_PROVIDER` and restart the service.
+
+**Finding the two Azure values that are easy to get wrong.** `AZURE_OPENAI_ENDPOINT` is the resource root and nothing else (`https://<resource>.openai.azure.com` or `https://<resource>.services.ai.azure.com` for an AI Foundry resource) — the portal's "Target URI" includes a path, and that path must be dropped. `AZURE_OPENAI_DEPLOYMENT` is the deployment's own name, which is frequently neither the resource name nor the model name. To list what a resource actually exposes:
+
+```bash
+curl -s -H "api-key: $KEY" "$ENDPOINT/openai/deployments?api-version=2023-03-15-preview"
+```
 
 **Precision (`ollama`).** OAassist calls the model with a low temperature (deterministic, fact-bound). `gemma4:12b` (default) gives the cleanest, most direct answers but wants ~9 GB of RAM/VRAM; `qwen3:4b` is the low-resource floor (~3.5 GB) for a small CPU-only box, at the cost of wordier answers. The context window (`OLLAMA_NUM_CTX`) and answer length (`OLLAMA_NUM_PREDICT`) default to values sized for the smallest target and are raisable on roomier hardware. Keep the injected chunks plus `OLLAMA_NUM_PREDICT` under `OLLAMA_NUM_CTX` or the prompt is silently truncated. For the daemon-side memory tuning on constrained boxes, see [`installer/INSTALL.md`](installer/INSTALL.md).
 
@@ -471,7 +482,7 @@ OAassist/
 │   ├── ask_service.py   # Shared core: orchestrates one Q&A request
 │   ├── rag.py           # Embedding + ChromaDB
 │   ├── config.py        # Single source of truth for env config
-│   ├── llm/             # Pluggable LLM providers (noop, anthropic, ollama)
+│   ├── llm/             # Pluggable LLM providers (noop, anthropic, ollama, azure_openai)
 │   └── plugins/         # Optional endpoints (/v1/suggest, /v1/suggest-questions)
 ├── ingest.py            # CLI ingestion (alternative to POST /v1/reindex)
 ├── build/               # PyInstaller spec + runtime hook
