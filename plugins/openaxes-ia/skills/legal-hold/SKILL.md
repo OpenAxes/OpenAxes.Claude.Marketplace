@@ -6,7 +6,7 @@ description: >
   "endpoint hold", "custodian data source", "apply hold", "release hold", or any task involving managing
   legal hold custodians, notifications, custodian data sources, or endpoint preservation in OpenAxes IA.
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
 ---
 
 # Legal Hold Management — OpenAxes IA
@@ -18,9 +18,11 @@ Manage legal hold operations through the MCP tools: `get_custodians`, `add_custo
 
 ## Conventions
 
-For `get_custodians`, `add_custodians`, `release_custodian`, `send_notification`, `add_custodian_data_sources`, `apply_custodian_data_source_hold`, and `release_custodian_data_source_hold`, the investigation reference accepts an exact investigation name or a **hashed ID**. Custodian references for notification/release and custodian datasource tools accept name, email address, or hashed custodian ID scoped to the resolved investigation. Legacy endpoint hold tools (`apply_endpoint_hold`, `release_endpoint_hold`) intentionally preserve their preexisting `investigationId` + `endpointId` hashed-ID contract.
+For `get_custodians`, `add_custodians`, `release_custodian`, `send_notification`, `add_custodian_data_sources`, `apply_custodian_data_source_hold`, and `release_custodian_data_source_hold`, the investigation reference accepts an exact investigation name or a **hashed ID**. Custodian references for notification/release and custodian datasource tools accept name, email address, or hashed custodian ID scoped to the resolved investigation. Legacy endpoint hold tools (`apply_endpoint_hold`, `release_endpoint_hold`) intentionally preserve their preexisting `investigationId` + `endpointId` hashed-ID **selector** contract; they additionally accept the optional `approver` and `comments` approval-submission fields described below.
 
 Mutation tools that modify legal hold state use two-stage authorization. `tools/list` visibility means the caller may attempt the tool. Direct execution requires both investigation write access and the action-specific legal-hold permission. If direct execution is denied but the caller has `ApprovalRequest` and approval applies, supported tools return `approval_required` instead of failing. Re-call with both `approver` (approver name, email, or hashed user ID for an active tenant user with `ApprovalApprove`) and `comments` to submit an approval request. Approval is offered only when the tenant feature, approval workflow, and applicable change approval configuration are enabled.
+
+This applies to **every** legal-hold mutation tool, including `apply_endpoint_hold` and `release_endpoint_hold`. Holding the endpoint-hold permission alone is not sufficient to mutate preservation state on an investigation the caller cannot write to.
 
 ## Workflow guidance
 
@@ -65,6 +67,13 @@ Constraints:
 - The endpoint must belong to the supplied investigation
 - Apply: endpoint hold status must be `None` or `Released`
 - Release: endpoint hold status must be `Active`
+
+Both tools are **approval-aware**. Direct execution requires the endpoint-hold-apply/release permission *and* write access to the investigation (creator, editing reviewer, workspace manager, or general investigation write). When direct execution is denied:
+
+- If the caller has `ApprovalRequest` and endpoint-change approval is applicable, the tool returns `approval_required` listing the missing `approver` and/or `comments`, with candidate approvers when `approver` is missing. Re-call with both fields to raise the approval request; the tool then returns `approval_required` with `success=true` and does **not** change the hold.
+- If approval does not apply — the tenant feature, the approval workflow, or the data-processing endpoint-change approval setting is off — or the caller lacks `ApprovalRequest`, the tool returns `authorization_failure` and the hold is unchanged.
+
+An approved request re-dispatches the same hold command, so approving it applies or releases exactly the endpoint that was requested. Domain preconditions (endpoint type, hold state) are evaluated before the approval decision, so an ineligible endpoint fails with `domain_failure` rather than raising an approval nobody can act on.
 
 ### Custodian datasource preservation tools
 

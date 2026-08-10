@@ -1,6 +1,6 @@
 {
   "name": "openaxes-ia",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "OpenAxes Investigation Assistant integration — manage investigations, legal holds, document search/review, and reports via MCP.",
   "author": {
     "name": "OpenAxes"

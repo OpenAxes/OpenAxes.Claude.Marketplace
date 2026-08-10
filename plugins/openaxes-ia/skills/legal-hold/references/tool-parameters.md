@@ -69,8 +69,12 @@ Returns: `success`, `sent`.
 |---|---|---|---|
 | `investigationId` | string | Yes | Hashed investigation ID |
 | `endpointId` | string | Yes | Hashed endpoint ID belonging to the investigation |
+| `comments` | string | No | Required when submitting an approval request |
+| `approver` | string | No | Approval approver name, email address, or hashed user ID; must be an active tenant user with `ApprovalApprove` |
 
-Returns: `success`, `endpointId`. This legacy endpoint-hold tool intentionally preserves its preexisting hashed-ID contract. Only M365Custodian endpoints; status must be None or Released.
+Returns: `success`, `endpointId`. This legacy endpoint-hold tool intentionally preserves its preexisting hashed-ID **selector** contract; `approver`/`comments` are additive approval-submission fields and are never required to identify the endpoint. Only M365Custodian endpoints; status must be None or Released.
+
+Approval-aware, in the same three modes as `add_custodians`. Direct execution requires `InvestigationDataEndpointsHoldApply` **and** write access to the investigation. If direct execution is denied and endpoint-change approval applies, missing `approver`/`comments` returns `approval_required` with candidate approvers when `approver` is missing; supplying both raises a `HoldApplyDataEndpoints` approval request and leaves the hold status unchanged. If approval does not apply, or the caller lacks `ApprovalRequest`, the tool returns `authorization_failure` and does not mutate.
 
 ## release_endpoint_hold
 
@@ -78,8 +82,12 @@ Returns: `success`, `endpointId`. This legacy endpoint-hold tool intentionally p
 |---|---|---|---|
 | `investigationId` | string | Yes | Hashed investigation ID |
 | `endpointId` | string | Yes | Hashed endpoint ID belonging to the investigation |
+| `comments` | string | No | Required when submitting an approval request |
+| `approver` | string | No | Approval approver name, email address, or hashed user ID; must be an active tenant user with `ApprovalApprove` |
 
-Returns: `success`, `endpointId`. This legacy endpoint-hold tool intentionally preserves its preexisting hashed-ID contract. Only M365Custodian endpoints; status must be Active.
+Returns: `success`, `endpointId`. This legacy endpoint-hold tool intentionally preserves its preexisting hashed-ID **selector** contract; `approver`/`comments` are additive approval-submission fields and are never required to identify the endpoint. Only M365Custodian endpoints; status must be Active.
+
+Approval-aware, exactly as `apply_endpoint_hold`, with `InvestigationDataEndpointsHoldRelease` as the direct-execution permission and `HoldReleaseDataEndpoints` as the raised approval action.
 
 ## add_custodian_data_sources
 
