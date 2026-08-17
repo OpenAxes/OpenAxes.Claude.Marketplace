@@ -4,7 +4,7 @@
 
 The intended deployment is alongside the OpenAxes apps (Radar, PuRe, Investigation Assistant): OAassist is installed as a Windows Service, each app calls its REST API (`POST /v1/ask`) for help-aware answers, and Claude Code / Desktop can also connect via MCP for ad-hoc queries.
 
-For the long-form architecture and the build record, see [`docs/`](docs/) — `ARCHITECTURE.md` and `PHASE1_PLAN.md`.
+For the long-form architecture, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); the build record is `CHANGELOG.md` and git history.
 
 ---
 
@@ -209,7 +209,7 @@ curl -X POST http://localhost:8000/v1/reindex -H "Content-Type: application/json
 curl -X POST http://localhost:8000/v1/reindex -H "Content-Type: application/json" -d '{"app":"radar"}'
 ```
 
-MSI installs ship `AUTH_ENABLED=true`: add `-H "Authorization: Bearer <token>"` to the `/v1/*` calls (`/healthz` is unauthenticated). Token minting: [Security](#security).
+MSI installs ship `AUTH_ENABLED=true`: add `-H "Authorization: Bearer <token>"` to the `/v1/*` calls. `/healthz` stays unauthenticated for liveness, but a remote caller sees only `{"status":"ready"}` — `version` and `collection_size` need loopback or a token. Token minting: [Security](#security).
 
 ### MCP registration (Claude Code)
 
@@ -253,7 +253,33 @@ The plugin source lives in this repo (`.claude-plugin/`, `skills/`) and is publi
 
 ## Configuration
 
-All settings live in `.env` (development) or `C:\ProgramData\OAassist\OAassist.env` (MSI install). They are read once at startup; restart the service to apply changes. One exception: the documents root can also be changed at runtime via `PUT /v1/config` (used by the web complement's UI) — the new path is persisted in `settings.json` next to the database, overrides `DATA_PATH`, and the `PUT` triggers a full reindex. `GET /v1/config` shows the path in effect and where it came from.
+### Which file the service reads
+
+One file per way of running — never mixed:
+
+| How you run | File | Where |
+|---|---|---|
+| From source (`uv run src/main.py`) | `.env` | **Repo root**, copied from `.env.example` |
+| Frozen exe (MSI install *or* a `dist\` bundle) | `OAassist.env` | **`C:\ProgramData\OAassist\`** — always, no matter where the exe sits |
+| Docker | `.env` | Repo root (compose passes it in and mounts `DATA_PATH`) |
+| CI / one-off override | no file — process environment variables | set in the shell before starting |
+
+The rules that remove every known surprise:
+
+- **A frozen exe never reads `OAassist.env` beside itself.** Only the ProgramData copy counts. (A file literally named `.env` in or above the exe's folder *would* load first — don't keep one there.)
+- **Precedence** when the same variable is set in more than one place: **process environment > `.env` > `OAassist.env`**. The first value found wins; later sources only fill gaps.
+- **Read once, at startup.** Editing a file while the service runs changes nothing — restart to apply. Invalid config refuses to start with a message naming the variable; that error is the system working, not failing.
+- **One runtime exception:** the documents root set via `PUT /v1/config` (used by the web complement's UI) is persisted in `settings.json` next to the database and **overrides `DATA_PATH`**; the `PUT` triggers a full reindex. `GET /v1/config` shows the path in effect and where it came from.
+- On Windows, watch for Notepad saving `.env.txt` while Explorer hides the extension — `dir /a *.env*` shows the real name.
+- **Secrets** (`ANTHROPIC_API_KEY`, `AZURE_OPENAI_API_KEY`): never in a committed or shared `.env`; for throwaway tests use a process env var, which dies with the shell. On an install, restrict `OAassist.env` with the data-directory ACL — [`docs/operations/SECURITY_AUDIT.md`](docs/operations/SECURITY_AUDIT.md), finding 10, has the exact command and the Azure-side containment.
+
+**Is my file being read?** Three checks, fastest first:
+
+1. From the repo root: `uv run python -c "from src.config import config; print(config.data_path)"` — prints your `DATA_PATH`, or `None` if the file is not being found.
+2. The litmus test: set `LLM_PROVIDER=xyz` in the file and start the service. If it refuses to start with `Invalid LLM_PROVIDER 'xyz'`, the file is definitely being read. Revert it.
+3. On a running service: `GET /v1/config` — the documents root in effect and where it came from.
+
+### Variables
 
 | Variable | Default | Description |
 |---|---|---|
@@ -286,6 +312,13 @@ All settings live in `.env` (development) or `C:\ProgramData\OAassist\OAassist.e
 | `OLLAMA_NUM_PREDICT` | `512` | Max tokens in a synthesized answer. Default keeps CPU-only generation under the request timeout; raise if answers are being cut short. |
 | `OLLAMA_NUM_GPU` | _(unset)_ | Number of model layers to offload to the GPU. Leave unset — Ollama auto-detects a GPU and offloads as many layers as fit in VRAM. Set only to override: `0` forces CPU; a small number offloads partially on a VRAM-limited GPU. |
 | `AUTH_ENABLED` | `false` | Require a bearer service token on `/v1` + `/mcp`. Keep `true` on any reachable install. See [Security](#security). |
+| `HOST` | auth on: `0.0.0.0` · auth off: `127.0.0.1` | Bind address, and the default is never unsafe: an engine without auth listens on loopback only. Set it explicitly to override — opening the network without auth is warned at startup. |
+| `MANAGEMENT_TOKENS_ENFORCED` | `false` | When `true`, the admin surface (reindex, document mutations, history, config, app registry) requires a token minted with `issue-token --management`. Flip it only AFTER re-minting the complement's token. See [docs/USING_TOKEN_OAASSIST.md](docs/USING_TOKEN_OAASSIST.md). |
+| `RATE_LIMIT_ENABLED` | `true` | Per-token rate limiting on the paths that can reach a model (`/v1/ask`, `/v1/suggest-questions`, `/mcp`). Over a limit the caller gets `429` with `Retry-After` and the `rule` that fired. `false` disables the layer entirely. Design: [docs/RATE_LIMITING.md](docs/RATE_LIMITING.md). |
+| `RATE_LIMIT_PER_MINUTE` | `60` | Requests per token per sliding minute. Stops a retry/render loop inside a minute. Install default — a credential can carry its own number (`issue-token --per-minute`), because client A and client B did not buy the same license. |
+| `RATE_LIMIT_PER_DAY` | `5000` | Requests per token per day. Guards the bill: 60/min alone still allows 86,400 calls a day. Per-credential override: `issue-token --per-day`. |
+| `RATE_LIMIT_CONCURRENT` | `8` | Concurrent in-flight requests per token, so one caller cannot occupy every worker while others wait. Per-credential override: `issue-token --concurrent`. |
+| `TOKEN_DEFAULT_TTL_DAYS` | `183` | How long a freshly minted token lives (six months) unless `issue-token --expires-days` says otherwise. `0` = new tokens never expire. |
 | `DEPLOYMENT_MODE` | `standard` | `on_prem` refuses to start with a non-local LLM provider, guaranteeing document content never leaves the installation. See [docs/LLM_WIKI.md](docs/LLM_WIKI.md). |
 | `LLM_WIKI_ENABLED` | `false` | Query-driven synthesized wiki layer. Off = no wiki components, no extra LLM calls. See [docs/LLM_WIKI.md](docs/LLM_WIKI.md). |
 | `LLM_WIKI_MAX_RESULTS` | `3` | Max wiki notes added to one answer's context. |
@@ -297,7 +330,7 @@ All settings live in `.env` (development) or `C:\ProgramData\OAassist\OAassist.e
 | `ACTIVITY_MAX_EVENTS_PER_USER` | `1000` | Cap on stored activity rows **per subject** — one person, at one client, in one app. Per-subject and not global on purpose: two people at the same client must never compete for one budget, or the busier one erases the other's behaviour pattern. The newest rows are kept. `0` keeps everything. See [docs/ACTIVITY_INTAKE.md](docs/ACTIVITY_INTAKE.md). |
 | `LOG_LEVEL` | `INFO` | Logging verbosity. |
 
-OAassist validates the config at startup and refuses to start with a clear error message when: `LLM_PROVIDER=anthropic` but no key is set; `LLM_PROVIDER` or `DEPLOYMENT_MODE` is an unknown value; `DEPLOYMENT_MODE=on_prem` is combined with a non-local provider; or any of `RELEVANCE_MAX_DISTANCE`, the `HYBRID_*` top-k values, the `SECTION_EXPANSION_MAX_*` caps or the `LLM_WIKI_*_WEIGHT` weights is zero or negative (`HISTORY_RETENTION_DAYS` and `ACTIVITY_MAX_EVENTS_PER_USER` accept `0`, which means "keep everything").
+OAassist validates the config at startup and refuses to start with a clear error message when: `LLM_PROVIDER=anthropic` but no key is set; `LLM_PROVIDER` or `DEPLOYMENT_MODE` is an unknown value; `DEPLOYMENT_MODE=on_prem` is combined with a non-local provider; or any of `RELEVANCE_MAX_DISTANCE`, the `HYBRID_*` top-k values, the `SECTION_EXPANSION_MAX_*` caps, the `RATE_LIMIT_*` limits or the `LLM_WIKI_*_WEIGHT` weights is zero or negative (`HISTORY_RETENTION_DAYS` and `ACTIVITY_MAX_EVENTS_PER_USER` accept `0`, which means "keep everything").
 
 ---
 
@@ -508,7 +541,7 @@ other. On .NET, take the package instead of writing an HTTP client: contract
 drift then arrives as a version bump rather than as a field that silently stops
 appearing.
 
-For the full architecture and target design, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). For the staged build plan, [`docs/plans/PHASE1_PLAN.md`](docs/plans/PHASE1_PLAN.md).
+For the full architecture and target design, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). For what remains planned, [`docs/plans/TODO.md`](docs/plans/TODO.md).
 
 ---
 
