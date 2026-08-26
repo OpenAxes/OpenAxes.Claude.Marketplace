@@ -214,7 +214,7 @@ MSI installs ship `AUTH_ENABLED=true`: add `-H "Authorization: Bearer <token>"` 
 ### MCP registration (Claude Code)
 
 ```bash
-claude mcp add --transport http --scope user OAassist http://localhost:8000/mcp
+claude mcp add OAassist http://localhost:8000/mcp --transport http --scope user
 claude mcp list
 claude mcp remove OAassist --scope user
 ```
@@ -233,7 +233,7 @@ make clean-all   # caches + chroma_db (requires re-ingest)
 OAassist exposes an MCP server at `/mcp` over HTTP. Once the service is running (any install path), register it in Claude Code:
 
 ```bash
-claude mcp add --transport http --scope user OAassist http://localhost:8000/mcp
+claude mcp add OAassist http://localhost:8000/mcp --transport http --scope user
 claude mcp list   # should show OAassist with ask_documentation and read_document
 ```
 
