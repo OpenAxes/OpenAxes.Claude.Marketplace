@@ -328,7 +328,7 @@ The rules that remove every known surprise:
 | `DATABASE_PATH` | `<ProgramData>\OAassist\oaassist.db` | SQLite file for service tokens and query history. |
 | `HISTORY_RETENTION_DAYS` | `365` | How long query-history rows are kept. Older rows are purged once a day. `0` keeps everything forever. |
 | `ACTIVITY_MAX_EVENTS_PER_USER` | `1000` | Cap on stored activity rows **per subject** — one person, at one client, in one app. Per-subject and not global on purpose: two people at the same client must never compete for one budget, or the busier one erases the other's behaviour pattern. The newest rows are kept. `0` keeps everything. See [docs/ACTIVITY_INTAKE.md](docs/ACTIVITY_INTAKE.md). |
-| `LOG_LEVEL` | `INFO` | Logging verbosity. |
+| `LOG_LEVEL` | `INFO` | Logging verbosity: the root logger's floor, and so the floor of the in-memory log window the admin UI's **Logs** page reads (`GET /v1/logs`). The engine keeps its newest 2,000 lines there and forgets the rest — nothing accumulates. |
 
 OAassist validates the config at startup and refuses to start with a clear error message when: `LLM_PROVIDER=anthropic` but no key is set; `LLM_PROVIDER` or `DEPLOYMENT_MODE` is an unknown value; `DEPLOYMENT_MODE=on_prem` is combined with a non-local provider; or any of `RELEVANCE_MAX_DISTANCE`, the `HYBRID_*` top-k values, the `SECTION_EXPANSION_MAX_*` caps, the `RATE_LIMIT_*` limits or the `LLM_WIKI_*_WEIGHT` weights is zero or negative (`HISTORY_RETENTION_DAYS` and `ACTIVITY_MAX_EVENTS_PER_USER` accept `0`, which means "keep everything").
 
@@ -579,12 +579,18 @@ It reports throughput and p50 / p95 / p99 latency. See [`docs/operations/QA_CHEC
 "C:\Program Files\OAassist\nssm.exe" status OAassist
 ```
 
-Logs:
+Logs — the quick way is the admin UI's **Logs** page (Admin role), which shows
+the engine's newest 2,000 lines without a remote desktop session. The files on
+disk are the service wrapper's and remain the durable record:
 
 ```
 C:\ProgramData\OAassist\logs\stdout.log
 C:\ProgramData\OAassist\logs\stderr.log
 ```
+
+Those names are what a fresh install writes; a service registered by an earlier
+version keeps the names it was given, so when in doubt sort `logs\` by
+`LastWriteTime` and read the newest file.
 
 To restart / stop / start:
 
