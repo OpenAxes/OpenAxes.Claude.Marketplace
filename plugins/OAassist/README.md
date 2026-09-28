@@ -480,7 +480,7 @@ curl http://localhost:8000/healthz
 ### Other endpoints
 
 - `POST /v1/suggest` and `POST /v1/suggest-questions` — optional context-driven suggestion plugins; contract in [`docs/API_INTEGRATION_QUICKSTART.md`](docs/API_INTEGRATION_QUICKSTART.md).
-- `GET /v1/history` — recent query-log entries.
+- `GET /v1/history` — recent query-log entries; `GET /v1/history/stats` — the same log counted by app, module, screen and day.
 - `POST /v1/activity` — the apps deliver what their users did, in the envelope OAassist defines, using a token bound to their app. Prototype; contract in [`docs/API_INTEGRATION_QUICKSTART.md`](docs/API_INTEGRATION_QUICKSTART.md), and the .NET client that speaks it lives in [`sdk/`](sdk/).
 - Document, app, and config management (`/v1/apps`, `/v1/documents*`, `GET`/`PUT /v1/config`) — used by the web complement; see [`docs/COMPLEMENT.md`](docs/COMPLEMENT.md).
 
