@@ -13,7 +13,7 @@ For the long-form architecture, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.m
 | You are... | Go to |
 |---|---|
 | A customer IT admin installing on Windows Server | [Install with the MSI](#install-with-the-msi-windows-server) |
-| A developer running OAassist locally | [Run from source](#run-from-source-development) or [Run in Docker](#run-in-docker-development) |
+| A developer running OAassist locally | [Run from source](#run-from-source-development) |
 
 ---
 
@@ -145,21 +145,6 @@ curl http://localhost:8000/healthz
 
 ---
 
-## Run in Docker (development)
-
-```bash
-docker compose build
-docker compose up
-```
-
-The container reads your `.env`, mounts your `DATA_PATH` into `/app/docs` read-only, and persists `chroma_db/` to the host. The default embedding model is baked into the image so the container runs fully offline once built.
-
-At minimum your `.env` needs **`DATA_PATH`** (the host folder to mount). For synthesized answers, also set `LLM_PROVIDER` and the matching provider keys — see [Configuration](#configuration). If you pick `ollama`, the compose file already redirects to `host.docker.internal:11434`, so the daemon must be running on your host.
-
-> Docker is provided **only for development and CI**. The customer-facing distribution is the Windows MSI above.
-
----
-
 ## Cheat sheet
 
 Most-used commands once the environment is set up. See the sections above for first-time setup.
@@ -173,14 +158,6 @@ uv run src/main.py                   # start service on port 8000 (REST + MCP)
 uv run ingest.py                     # re-index DATA_PATH from the CLI
 LLM_PROVIDER=noop uv run testing/test_llm.py     # smoke-test the LLM layer
 uv run testing/load_test.py --concurrency 10 --duration 60
-```
-
-### Docker
-
-```bash
-docker compose build
-docker compose up
-docker compose down
 ```
 
 ### Build the Windows MSI
@@ -261,7 +238,6 @@ One file per way of running — never mixed:
 |---|---|---|
 | From source (`uv run src/main.py`) | `.env` | **Repo root**, copied from `.env.example` |
 | Frozen exe (MSI install *or* a `dist\` bundle) | `OAassist.env` | **`C:\ProgramData\OAassist\`** — always, no matter where the exe sits |
-| Docker | `.env` | Repo root (compose passes it in and mounts `DATA_PATH`) |
 | CI / one-off override | no file — process environment variables | set in the shell before starting |
 
 The rules that remove every known surprise:
@@ -361,7 +337,7 @@ To switch providers, edit `LLM_PROVIDER` and restart the service.
 curl -s -H "api-key: $KEY" "$ENDPOINT/openai/deployments?api-version=2023-03-15-preview"
 ```
 
-**Precision (`ollama`).** OAassist calls the model with a low temperature (deterministic, fact-bound). `gemma4:12b` (default) gives the cleanest, most direct answers but wants ~9 GB of RAM/VRAM; `qwen3:4b` is the low-resource floor (~3.5 GB) for a small CPU-only box, at the cost of wordier answers. The context window (`OLLAMA_NUM_CTX`) and answer length (`OLLAMA_NUM_PREDICT`) default to values sized for the smallest target and are raisable on roomier hardware. Keep the injected chunks plus `OLLAMA_NUM_PREDICT` under `OLLAMA_NUM_CTX` or the prompt is silently truncated. For the daemon-side memory tuning on constrained boxes, see [`installer/INSTALL.md`](installer/INSTALL.md).
+**Precision (`ollama`).** OAassist calls the model with a low temperature (deterministic, fact-bound). `gemma4:12b` (default) gives the cleanest, most direct answers but wants ~9 GB of RAM/VRAM; `qwen3:4b` is the low-resource floor (~3.5 GB) for a small CPU-only box, at the cost of wordier answers. The context window (`OLLAMA_NUM_CTX`) and answer length (`OLLAMA_NUM_PREDICT`) default to values sized for the smallest target and are raisable on roomier hardware. Keep the injected chunks plus `OLLAMA_NUM_PREDICT` under `OLLAMA_NUM_CTX` or the prompt is silently truncated. The one precision setting a request cannot carry is the quantization: for a higher-bit build of the same model, pull the tag the Ollama library lists for it (`ollama show <model>` names what you have) and set `OLLAMA_MODEL` to that tag. No Modelfile is needed: OAassist sends its own system prompt and the sampling options with every call, and those override a Modelfile's. For the daemon-side memory tuning on constrained boxes, see [`installer/INSTALL.md`](installer/INSTALL.md).
 
 ---
 
@@ -446,7 +422,7 @@ curl -X POST http://localhost:8000/v1/ask \
      -d '{"query":"How do I close a case?","app":"radar"}'
 ```
 
-PowerShell equivalent in [`examples/powershell/ask.ps1`](examples/powershell/ask.ps1).
+PowerShell equivalent: `.\examples\powershell.ps1 ask` ([`examples/powershell.ps1`](examples/powershell.ps1)).
 
 ### `POST /v1/reindex`
 
@@ -484,7 +460,7 @@ curl http://localhost:8000/healthz
 - `POST /v1/activity` — the apps deliver what their users did, in the envelope OAassist defines, using a token bound to their app. Prototype; contract in [`docs/API_INTEGRATION_QUICKSTART.md`](docs/API_INTEGRATION_QUICKSTART.md), and the .NET client that speaks it lives in [`sdk/`](sdk/).
 - Document, app, and config management (`/v1/apps`, `/v1/documents*`, `GET`/`PUT /v1/config`) — used by the web complement; see [`docs/COMPLEMENT.md`](docs/COMPLEMENT.md).
 
-Ready-to-run scripts in [`examples/curl/`](examples/curl/) and [`examples/powershell/`](examples/powershell/).
+Ready-to-run requests, one per endpoint, in [`examples/curl.sh`](examples/curl.sh) and [`examples/powershell.ps1`](examples/powershell.ps1): run one by name (`./examples/curl.sh suggest`).
 
 ---
 
@@ -529,7 +505,7 @@ OAassist/
 ├── ingest.py            # CLI ingestion (alternative to POST /v1/reindex)
 ├── build/               # PyInstaller spec + runtime hook
 ├── installer/           # WiX MSI definition + INSTALL.md
-├── examples/            # curl, PowerShell, MCP registration
+├── examples/            # curl.sh, powershell.ps1: one request per endpoint
 ├── scripts/             # build-msi.ps1 (MSI build)
 ├── sdk/                 # Two .NET packages, published on every v* tag:
 │   ├── OpenAxes.OAassist.Client/           # read: ask, suggest, documents
@@ -678,6 +654,3 @@ rm -rf ~/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2
 
 **Does OAassist phone home?**
 No. With `LLM_PROVIDER=noop` (the default) nothing leaves the host. With `LLM_PROVIDER=anthropic` the question + retrieved chunks go to Anthropic — for answers and, when `LLM_WIKI_ENABLED=true`, for wiki page synthesis too. The embedding model runs locally; documents and embeddings never leave the host. To make locality a hard guarantee, set `DEPLOYMENT_MODE=on_prem`: the service then refuses to start with any non-local provider.
-
-**Why is the docker image so big (~5.7 GB)?**
-It's mostly torch + transformers. The PyInstaller MSI bundle is much smaller (~860 MB).
